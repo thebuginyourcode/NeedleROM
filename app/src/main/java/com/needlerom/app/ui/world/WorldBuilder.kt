@@ -81,7 +81,7 @@ internal fun IntArray.toImage(w: Int, h: Int): ImageBitmap =
     Bitmap.createBitmap(this, w, h, Bitmap.Config.ARGB_8888).asImageBitmap()
 
 /** Caches rendered blocks and sprites; they never change while editing maps. */
-internal class GfxCache(private val world: Gen1World) {
+class GfxCache(private val world: Gen1World) {
     private val blocks = HashMap<Long, ImageBitmap>()
     private val sprites = HashMap<Int, ImageBitmap?>()
 
