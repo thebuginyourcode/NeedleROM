@@ -3,6 +3,7 @@ package com.needlerom.app.ui.tools
 import androidx.compose.runtime.Composable
 import com.needlerom.app.AppViewModel
 import com.needlerom.app.ui.FileActions
+import com.needlerom.app.ui.world.WorldBuilderTool
 import com.needlerom.core.TextTable
 import com.needlerom.core.Tool
 
@@ -11,6 +12,7 @@ fun ToolHost(vm: AppViewModel, tool: Tool, actions: FileActions) {
     val s = vm.session ?: return
     val back = { vm.back(); Unit }
     when (tool) {
+        Tool.WORLD_BUILDER -> WorldBuilderTool(vm, s, back)
         Tool.POKEMON_STATS -> PokemonStatsTool(vm, s, back)
         Tool.POKEMON_NAMES -> PokemonNamesTool(vm, s, back)
         Tool.POKEMON_BULK -> PokemonBulkTool(vm, s, back)

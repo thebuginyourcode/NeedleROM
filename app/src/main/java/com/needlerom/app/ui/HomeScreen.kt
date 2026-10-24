@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
@@ -78,6 +79,8 @@ fun HomeScreen(vm: AppViewModel, actions: FileActions) {
 
             Feature(Icons.Filled.Star, "Optimized for your game",
                 "Pick a supported Pokémon or Mario game to unlock deep editors: base stats, names, dialogue, lives, colours and randomizers.")
+            Feature(Icons.Filled.Create, "Build your world",
+                "In Pokémon Red, Blue and Yellow, paint maps with the game's real tiles, place and move NPCs, change what they say, swap item ball contents and rewire doors.")
             Feature(Icons.Filled.Search, "Or just auto-detect",
                 "Don't want to choose? NeedleROM identifies the system and game for you and gives you a universal toolkit that works on anything.")
             Feature(Icons.Filled.Build, "Share it as a patch",

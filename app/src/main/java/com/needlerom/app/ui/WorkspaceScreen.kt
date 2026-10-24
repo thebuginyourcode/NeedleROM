@@ -83,7 +83,10 @@ fun WorkspaceScreen(vm: AppViewModel, actions: FileActions) {
                 Text("${changes.size} edit(s)", fontWeight = FontWeight.Medium)
                 changes.takeLast(6).reversed().forEach { Hint("• ${it.label}") }
                 if (changes.size > 6) Hint("…and ${changes.size - 6} more")
-                TextButton(onClick = { vm.revertAll() }) { Text("Revert everything") }
+                Row {
+                    TextButton(onClick = { vm.undo() }) { Text("Undo last") }
+                    TextButton(onClick = { vm.revertAll() }) { Text("Revert everything") }
+                }
             }
         }
     }

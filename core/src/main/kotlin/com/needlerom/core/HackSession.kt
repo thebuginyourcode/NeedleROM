@@ -6,6 +6,8 @@ import com.needlerom.core.patch.Bps
 import com.needlerom.core.patch.Ips
 import com.needlerom.core.patch.PatchException
 import com.needlerom.core.pokemon.PokemonEditor
+import com.needlerom.core.pokemon.PokemonGen
+import com.needlerom.core.world.Gen1World
 
 enum class Mode { AUTO, OPTIMIZED }
 
@@ -25,6 +27,11 @@ class HackSession(val rom: Rom, val mode: Mode, val profile: GameProfile?) {
     val pokemon: PokemonEditor? by lazy { profile?.pokemonGen?.let { PokemonEditor(rom, it) } }
 
     val textTable: TextTable? get() = profile?.textTable
+
+    /** The Gen 1 overworld, if this is a Red/Blue/Yellow profile and its tables were found. */
+    val world: Gen1World? by lazy {
+        if (profile?.pokemonGen == PokemonGen.GEN1 && Tool.WORLD_BUILDER in tools) Gen1World.locate(rom) else null
+    }
 
     val tools: List<Tool> = when (mode) {
         Mode.AUTO -> GameProfiles.autoTools(info)
@@ -48,6 +55,9 @@ class HackSession(val rom: Rom, val mode: Mode, val profile: GameProfile?) {
             Tool.SMW_LIVES ->
                 if (Smw.livesOffset(rom, info) != null) ToolState(t, true)
                 else ToolState(t, false, "Needs an unmodified-code US Super Mario World (LoROM)")
+            Tool.WORLD_BUILDER ->
+                if (world != null) ToolState(t, true)
+                else ToolState(t, false, "Couldn't find this game's map tables")
             Tool.GAME_TEXT ->
                 if (textTable != null) ToolState(t, true) else ToolState(t, false, "No text table for this game")
             else -> ToolState(t, true)

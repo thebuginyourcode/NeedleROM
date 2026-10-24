@@ -143,6 +143,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         message = "Switched to ${p.name} toolkit"
     }
 
+    fun undo() {
+        val label = session?.rom?.undo()
+        edited(if (label != null) "Undid: $label" else "Nothing to undo")
+    }
+
     fun revertAll() {
         session?.rom?.revertAll()
         edited("All changes reverted")

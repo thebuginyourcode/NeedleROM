@@ -1,7 +1,18 @@
 package com.needlerom.core
 
-/** A single labelled edit, kept so the UI can show what the hack changes. */
-data class Change(val label: String, val offset: Int, val length: Int)
+/**
+ * A single labelled edit, kept so the UI can show what the hack changes and undo it.
+ * Edits sharing a [group] are undone together (e.g. one paint stroke).
+ */
+class Change(
+    val label: String,
+    val offset: Int,
+    val length: Int,
+    internal val previous: ByteArray,
+    internal val group: Int,
+    /** True when [previous] is the whole ROM image (patch application). */
+    internal val whole: Boolean = false,
+)
 
 /**
  * An in-memory ROM. [original] is never modified, so patches (IPS/BPS) can always be
@@ -42,10 +53,35 @@ class Rom(val fileName: String, bytes: ByteArray) {
         return if (offset >= end) ByteArray(0) else data.copyOfRange(offset, end)
     }
 
+    private var groupCounter = 0
+    private var openGroup: Int? = null
+
+    /** Starts grouping writes into one undo step until [endGroup]. Nested calls are ignored. */
+    fun beginGroup() {
+        if (openGroup == null) openGroup = ++groupCounter
+    }
+
+    fun endGroup() {
+        openGroup = null
+    }
+
+    /** Runs [block] as a single undo step. */
+    fun <T> batch(block: () -> T): T {
+        val outer = openGroup != null
+        beginGroup()
+        try {
+            return block()
+        } finally {
+            if (!outer) endGroup()
+        }
+    }
+
     fun write(offset: Int, bytes: ByteArray, label: String) {
         require(inBounds(offset, bytes.size)) { "Write outside ROM: 0x${offset.toString(16)}" }
+        if (data.copyOfRange(offset, offset + bytes.size).contentEquals(bytes)) return
+        val previous = data.copyOfRange(offset, offset + bytes.size)
         bytes.copyInto(data, offset)
-        _changes += Change(label, offset, bytes.size)
+        _changes += Change(label, offset, bytes.size, previous, openGroup ?: ++groupCounter)
     }
 
     fun write8(offset: Int, value: Int, label: String) =
@@ -53,8 +89,21 @@ class Rom(val fileName: String, bytes: ByteArray) {
 
     /** Replaces the whole working image, e.g. after applying an external patch. */
     fun replaceAll(newData: ByteArray, label: String) {
+        val previous = data
         data = newData.copyOf()
-        _changes += Change(label, 0, newData.size)
+        _changes += Change(label, 0, newData.size, previous, openGroup ?: ++groupCounter, whole = true)
+    }
+
+    val canUndo: Boolean get() = _changes.isNotEmpty()
+
+    /** Reverts the most recent undo step. Returns its label, or null if there was nothing to undo. */
+    fun undo(): String? {
+        val last = _changes.lastOrNull() ?: return null
+        while (_changes.isNotEmpty() && _changes.last().group == last.group) {
+            val c = _changes.removeAt(_changes.lastIndex)
+            if (c.whole) data = c.previous else c.previous.copyInto(data, c.offset)
+        }
+        return last.label
     }
 
     fun revertAll() {

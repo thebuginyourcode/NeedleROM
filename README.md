@@ -25,7 +25,27 @@ To build it yourself, use JDK 17 and the Android SDK:
 ./gradlew :core:test             # ROM engine unit tests (no Android SDK needed)
 ```
 
-## Optimized games
+## World builder (Pokémon Red / Blue / Yellow)
+
+A map editor that works like a small game engine, except everything it does is written into the ROM, so the result is still a ROM hack that plays on any emulator.
+
+- **Maps:** every town, route, building and cave, drawn with the game's real tile graphics. Pinch to zoom and drag to look around.
+- **Tiles:** paint blocks, flood-fill areas, pick a block from the map, and change the border block. A palette shows the tileset's real blocks. You can overlay a grid and the tiles you can't walk on.
+- **NPCs:** shown with their real overworld sprites. Drag to move them, change their sprite and movement (stand facing a direction, wander, pace), and add new NPCs (up to 15 per map). New NPCs reuse a line of dialogue from someone already on the map, and NPCs you added can be deleted again.
+- **Dialogue:** edit what NPCs and signs say. Use line breaks for new lines, blank lines for new text boxes, and `<PLAYER>` / `<RIVAL>` codes. Lines that would run off the text box are flagged.
+- **Item balls:** change which item they hold, including TMs and HMs.
+- **Trainers:** pick which of their class's teams they use.
+- **Doors and warps:** move them, and change which map and door they lead to.
+- **Undo:** paint strokes and fills undo as one step.
+
+How it stays safe:
+
+- **Tables found by structure:** map, tileset, sprite and item tables are located by searching for their structure, not by trusting fixed addresses.
+- **Same-size edits in place:** edits that keep the data size are written where the data already is.
+- **Free space for new NPCs:** adding an NPC rebuilds the map's event data in empty space at the end of that map's ROM bank and points the map header at the new copy.
+- **Original NPCs are protected:** NPCs that were in the original game can't be deleted, because the game's scripts refer to them by position.
+
+
 
 | Game | System | Tools |
 |---|---|---|

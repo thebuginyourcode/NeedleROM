@@ -74,7 +74,7 @@ class CoreTest {
         val b2 = ed.read(species[0])
         assertEquals(99, b2.hp); assertEquals(120, b2.spAtk); assertEquals(255, b2.catchRate)
         assertEquals(0x16, b2.type1) // untouched fields stay intact
-        assertTrue(s.toolStates().all { it.available })
+        assertTrue(s.toolStates().filter { it.tool != Tool.WORLD_BUILDER }.all { it.available })
     }
 
     @Test

@@ -7,6 +7,7 @@ enum class Family(val label: String) { POKEMON("Pokémon"), MARIO("Mario") }
 
 enum class Tool(val title: String, val description: String) {
     // Game-specific (optimized) tools
+    WORLD_BUILDER("World builder", "Paint maps, place NPCs and item balls, rewire doors and write dialogue"),
     POKEMON_STATS("Pokémon stats editor", "Edit base stats, types, catch rate and EXP for every Pokémon"),
     POKEMON_NAMES("Pokémon names", "Rename any Pokémon in the game's own font"),
     POKEMON_BULK("Quick hacks & randomizer", "Max catch rates, scale difficulty, randomize stats or types"),
@@ -40,6 +41,7 @@ class GameProfile(
 object GameProfiles {
     private val GENERIC = listOf(Tool.ROM_INFO, Tool.RELATIVE_SEARCH, Tool.HEX_EDITOR, Tool.APPLY_PATCH)
     private val POKEMON_TOOLS = listOf(Tool.POKEMON_STATS, Tool.POKEMON_NAMES, Tool.POKEMON_BULK, Tool.GAME_TEXT)
+    private val GEN1_TOOLS = listOf(Tool.WORLD_BUILDER) + POKEMON_TOOLS
 
     private fun titleStarts(vararg prefixes: String): (Rom, RomInfo) -> Boolean =
         { _, info -> prefixes.any { info.title.uppercase().startsWith(it) } }
@@ -52,12 +54,12 @@ object GameProfiles {
     val all: List<GameProfile> = listOf(
         GameProfile(
             "pkmn_rbg", "Pokémon Red / Blue / Green", Family.POKEMON, GB, "Game Boy · Gen I",
-            POKEMON_TOOLS + GENERIC, PokemonGen.GEN1, TextTable.POKEMON_GB,
+            GEN1_TOOLS + GENERIC, PokemonGen.GEN1, TextTable.POKEMON_GB,
             titleStarts("POKEMON RED", "POKEMON BLUE", "POKEMON GREEN"),
         ),
         GameProfile(
             "pkmn_yellow", "Pokémon Yellow", Family.POKEMON, GB, "Game Boy · Gen I",
-            POKEMON_TOOLS + GENERIC, PokemonGen.GEN1, TextTable.POKEMON_GB,
+            GEN1_TOOLS + GENERIC, PokemonGen.GEN1, TextTable.POKEMON_GB,
             titleStarts("POKEMON YELLOW"),
         ),
         GameProfile(
