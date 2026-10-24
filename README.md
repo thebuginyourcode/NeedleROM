@@ -45,7 +45,7 @@ How it stays safe:
 - **Free space for new NPCs:** adding an NPC rebuilds the map's event data in empty space at the end of that map's ROM bank and points the map header at the new copy.
 - **Original NPCs are protected:** NPCs that were in the original game can't be deleted, because the game's scripts refer to them by position.
 
-
+## Optimized games
 
 | Game | System | Tools |
 |---|---|---|
