@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.NeedleROM" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/splash</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+    <color name="splash">#14121C</color>
+    <color name="ic_bg">#2B1F4A</color>
+</resources>

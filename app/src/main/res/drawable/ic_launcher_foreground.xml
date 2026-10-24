@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A cartridge with a needle through it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F2EEFF"
+        android:pathData="M36,30h30l6,6v42h-36z" />
+    <path
+        android:fillColor="#2B1F4A"
+        android:pathData="M41,38h26v18h-26z" />
+    <path
+        android:fillColor="#2B1F4A"
+        android:pathData="M42,70h4v8h-4zM48,70h4v8h-4zM54,70h4v8h-4zM60,70h4v8h-4z" />
+    <path
+        android:fillColor="#FF5C8A"
+        android:pathData="M76,22l4,4l-30,30l-6,2l2,-6z" />
+</vector>
