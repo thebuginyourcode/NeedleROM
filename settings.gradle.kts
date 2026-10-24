@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "NeedleROM"
-include(":core", ":app")
+include(":engine", ":app")

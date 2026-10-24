@@ -7,4 +7,8 @@ local.properties
 captures/
 .kotlin/
 *.keystore
-!debug.keystore
+# Never commit game ROMs or saves
+*.gb
+*.gbc
+*.sav
+*.sym
