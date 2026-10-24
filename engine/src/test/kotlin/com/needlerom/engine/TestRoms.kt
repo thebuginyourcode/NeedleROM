@@ -18,6 +18,10 @@ object TestRoms {
 
     fun bytes(name: String): ByteArray? = file(name)?.readBytes()
 
+    /** Looks up a symbol's address in a .sym file from the ROM folder. */
+    fun sym(file: String, name: String): Int =
+        file(file)!!.readLines().first { it.endsWith(" $name") }.substringBefore(' ').substringAfter(':').toInt(16)
+
     private val SHADES = intArrayOf(0xE0F8D0, 0x88C070, 0x346856, 0x081820)
 
     /** Writes the current frame as a PNG (scaled 2x) for eyeballing test runs. */
