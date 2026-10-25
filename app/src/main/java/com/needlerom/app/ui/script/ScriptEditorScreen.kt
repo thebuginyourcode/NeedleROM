@@ -146,6 +146,7 @@ private fun usedFlags(steps: List<Step>): Set<Int> = steps.flatMap { s ->
         is Step.IfMoney -> usedFlags(s.then) + usedFlags(s.otherwise)
         is Step.IfHasPokemon -> usedFlags(s.then) + usedFlags(s.otherwise)
         is Step.IfChance -> usedFlags(s.then) + usedFlags(s.otherwise)
+        is Step.IfGameEvent -> usedFlags(s.then) + usedFlags(s.otherwise)
         is Step.GiveItem -> usedFlags(s.ifBagFull)
         is Step.GivePokemon -> usedFlags(s.ifNoRoom)
         else -> emptyList()
@@ -220,6 +221,10 @@ private fun StepCard(ctx: Ctx, step: Step, depth: Int, onChange: (Step?) -> Unit
                     Branch("If it's in the party") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
                     Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
                 }
+                is Step.IfGameEvent -> {
+                    Branch("If set") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
+                    Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
+                }
                 is Step.IfChance -> {
                     Branch("${step.percent}% of the time") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
                     Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
@@ -284,6 +289,8 @@ private fun title(c: Ctx, s: Step): String = when (s) {
     is Step.IfHasPokemon -> "If ${c.mon(s.species)} is in the party"
     is Step.IfChance -> "Random: ${s.percent}% chance"
     Step.End -> "End the event"
+    is Step.IfGameEvent -> "If story flag “${c.game.eventName(s.event)}” is set"
+    is Step.SetGameEvent -> (if (s.value) "Set" else "Clear") + " story flag “${c.game.eventName(s.event)}”"
 }
 
 private fun detail(c: Ctx, s: Step): String? = when (s) {
@@ -345,6 +352,8 @@ private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit
             "If flag is set" to { Step.IfFlag(0, emptyList(), emptyList()) },
             "Set flag" to { Step.SetFlag(0) },
             "Clear flag" to { Step.ClearFlag(0) },
+            "If a story flag is set (game's own)" to { Step.IfGameEvent(ctx.game.namedEvents.first(), emptyList(), emptyList()) },
+            "Set / clear a story flag (game's own)" to { Step.SetGameEvent(ctx.game.namedEvents.first(), true) },
         ),
         "Battles" to listOf(
             "Wild battle" to { Step.WildBattle(ctx.species.first(), 5) },
@@ -403,7 +412,7 @@ private fun categoryColor(s: Step): Color = when (s) {
     is Step.WalkToPlayer, is Step.Lead, is Step.HideNpc, is Step.ShowNpc, is Step.Face, is Step.MoveNpc, is Step.MovePlayer, is Step.Warp -> Color(0xFFC792EA)
     is Step.Wait, Step.FadeOut, Step.FadeIn, Step.End -> Color(0xFFA9B2BD)
     is Step.GiveBadge, is Step.TakeMoney -> Color(0xFF8EE08A)
-    is Step.IfBadge, is Step.IfMoney, is Step.IfHasPokemon, is Step.IfChance -> Color(0xFFFFB454)
+    is Step.IfBadge, is Step.IfMoney, is Step.IfHasPokemon, is Step.IfChance, is Step.IfGameEvent, is Step.SetGameEvent -> Color(0xFFFFB454)
     is Step.PlaySound, is Step.PlayCry, is Step.PlayMusic -> Color(0xFF5FD7C8)
 }
 
@@ -516,6 +525,14 @@ private fun StepDialog(ctx: Ctx, step: Step, onDismiss: () -> Unit, onSave: (Ste
                     is Step.GiveBadge -> Chooser("Badge", ctx.badge(v.badge), (0..7).toList(), ctx::badge, Modifier.fillMaxWidth()) { s = v.copy(badge = it) }
                     is Step.IfBadge -> Chooser("Badge", ctx.badge(v.badge), (0..7).toList(), ctx::badge, Modifier.fillMaxWidth()) { s = v.copy(badge = it) }
                     is Step.IfHasPokemon -> Chooser("Pokémon", ctx.mon(v.species), ctx.species, ctx::mon, Modifier.fillMaxWidth()) { s = v.copy(species = it) }
+                    is Step.IfGameEvent -> Chooser("Story flag", ctx.game.eventName(v.event), ctx.game.namedEvents, ctx.game::eventName, Modifier.fillMaxWidth()) { s = v.copy(event = it) }
+                    is Step.SetGameEvent -> {
+                        Chooser("Story flag", ctx.game.eventName(v.event), ctx.game.namedEvents, ctx.game::eventName, Modifier.fillMaxWidth()) { s = v.copy(event = it) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(v.value, { s = v.copy(value = it) }); Text("Set (unchecked = clear)")
+                        }
+                        Hint("These are the original game's story flags. Changing them can skip or replay story events.")
+                    }
                     is Step.IfChance -> {
                         NumberField("Chance (%)", v.percent, Modifier.fillMaxWidth(), 0..100) { s = v.copy(percent = it) }
                     }

@@ -230,6 +230,7 @@ private fun docLabel(state: AppState, d: Route): String {
     return when (d) {
         is Route.MapEditor -> state.mapName(d.mapId)
         is Route.ScriptEditor -> "Event: " + d.title
+        is Route.GameScript -> "Game script: " + d.title
         is Route.PokemonEditor -> g?.monName(g.internalOfDex(d.dex)) ?: "Pokémon"
         is Route.TrainerEditor -> "Trainer: " + (g?.trainerClassNames?.getOrNull(d.trainerClass) ?: "?")
         is Route.WildEditor -> "Wild: " + state.mapName(d.mapId)
@@ -261,6 +262,7 @@ private fun DocView(state: AppState, gfx: GfxCache) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                     when (d) {
                         is Route.ScriptEditor -> ScriptEditorScreen(state, d)
+                        is Route.GameScript -> com.needlerom.app.ui.script.GameScriptScreen(state, d)
                         is Route.PokemonEditor -> PokemonEditorScreen(state, d.dex)
                         is Route.TrainerEditor -> TrainerEditorScreen(state, d.trainerClass)
                         is Route.WildEditor -> WildEditorScreen(state, d.mapId)

@@ -31,6 +31,8 @@ sealed interface Route {
     data object Studio : Route
     data class MapEditor(val mapId: Int) : Route
     data class ScriptEditor(val mapId: Int, val textId: Int, val title: String) : Route
+    /** An original game script, read as blocks. */
+    data class GameScript(val mapId: Int, val textId: Int, val title: String) : Route
     data class PokemonEditor(val dex: Int) : Route
     data class TrainerEditor(val trainerClass: Int) : Route
     data class WildEditor(val mapId: Int) : Route

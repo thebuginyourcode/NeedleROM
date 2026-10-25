@@ -93,6 +93,12 @@ class PokeRed(val rom: Rom) {
 
     val trainerClassNames: List<String> get() = listOf("") + readNameList(sym("TrainerNames"), NUM_TRAINER_CLASSES)
 
+    /** Readable name of a story flag (EVENT_* bit of wEventFlags). */
+    fun eventName(event: Int): String = (if (isYellow) EventNames.YELLOW else EventNames.RED_BLUE)[event] ?: "Story flag #$event"
+
+    /** Story flags that have names, for pickers. */
+    val namedEvents: List<Int> get() = (if (isYellow) EventNames.YELLOW else EventNames.RED_BLUE).keys.sorted()
+
     fun mapName(id: Int): String = Names.MAPS[id] ?: "Map ${id.toString(16).uppercase()}"
     fun spriteName(id: Int): String = Names.SPRITES[id] ?: "Sprite $id"
 

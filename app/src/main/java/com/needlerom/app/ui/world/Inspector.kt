@@ -198,7 +198,10 @@ private fun BehaviorEditor(state: AppState, game: PokeRed, map: GameMap, textId:
     when (behavior) {
         is Behavior.Talk -> Text("“${behavior.text.replace("\n", " ").take(90)}”", style = MaterialTheme.typography.bodySmall)
         is Behavior.Mart -> Hint(behavior.items.joinToString { game.itemName(it) })
-        Behavior.GameCode -> Hint("Runs the original game's script (a cutscene, battle or special event). Replacing it may break the story here.")
+        Behavior.GameCode -> {
+            Hint("Runs the original game's script. Open it to read what it does and edit its lines; replacing it may break the story here.")
+            Button(onClick = { state.go(Route.GameScript(map.id, textId, "${state.mapName(map.id)} · text #$textId")) }) { Text("View script & edit lines") }
+        }
         else -> {}
     }
     if (shared && isNpc) {
