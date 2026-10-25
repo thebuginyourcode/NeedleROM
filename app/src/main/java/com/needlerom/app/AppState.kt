@@ -73,6 +73,9 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
     fun toast(m: String) { message = m }
 
+    /** Map name, using the project's names for maps made in the editor. */
+    fun mapName(id: Int): String = project?.mapNames?.get(id) ?: game?.mapName(id) ?: "Map $id"
+
     // ---- Projects ---------------------------------------------------------------------
 
     fun refreshProjects() {

@@ -118,10 +118,10 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                     }
                     TextButton(onClick = { st.selection = null }) { Text("Done") }
                 }
-                val dest = if (w.destMap == 0xFF) "Back outside (where the player came from)" else game.mapName(w.destMap)
+                val dest = if (w.destMap == 0xFF) "Back outside (where the player came from)" else state.mapName(w.destMap)
                 Chooser("Leads to", dest, listOf(0xFF) + game.world.maps.map { it.id },
-                    { if (it == 0xFF) "Back outside (where the player came from)" else game.mapName(it) }, Modifier.fillMaxWidth()) { target ->
-                    state.edit("Door now leads to ${if (target == 0xFF) "the previous map" else game.mapName(target)}") { map.setWarpDestination(w, target, w.destWarp) }
+                    { if (it == 0xFF) "Back outside (where the player came from)" else state.mapName(it) }, Modifier.fillMaxWidth()) { target ->
+                    state.edit("Door now leads to ${if (target == 0xFF) "the previous map" else state.mapName(target)}") { map.setWarpDestination(w, target, w.destWarp) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     NumberField("Arrive at door #", w.destWarp, Modifier.weight(1f), 1..32) { door -> state.edit { map.setWarpDestination(w, w.destMap, door) } }
@@ -132,6 +132,26 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                     TextButton(onClick = { if (state.edit("Door removed") { map.removeWarp(w) }) st.selection = null }) {
                         Text("Delete door", color = MaterialTheme.colorScheme.error)
                     }
+                }
+            }
+            is Selection.Trigger -> {
+                val t = map.triggers.firstOrNull { it.textId == sel.textId } ?: return@Column
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Trigger", fontWeight = FontWeight.Bold)
+                        Hint(if (t.x == null) "Runs when the player enters this map" else "(${t.x}, ${t.y}) · runs when the player steps here · drag to move")
+                    }
+                    TextButton(onClick = { st.selection = null }) { Text("Done") }
+                }
+                Hint("Runs once per game (remembered with flag ${t.flag}).")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = { state.go(Route.ScriptEditor(map.id, t.textId, "${map.info.name} · trigger")) }) { Text("Edit event") }
+                    OutlinedButton(onClick = {
+                        state.edit { if (t.x == null) map.moveTrigger(t, map.stepWidth / 2, map.stepHeight / 2) else map.moveTrigger(t, null, null) }
+                    }) { Text(if (t.x == null) "Use a tile" else "Whole map") }
+                }
+                TextButton(onClick = { if (state.edit("Trigger removed") { map.removeTrigger(t) }) st.selection = null }) {
+                    Text("Delete trigger", color = MaterialTheme.colorScheme.error)
                 }
             }
             null -> {}

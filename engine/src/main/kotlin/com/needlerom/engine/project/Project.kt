@@ -31,6 +31,9 @@ class Project private constructor(val dir: File) {
     /** User-facing names for script flags (flag number -> name). */
     val flagNames: MutableMap<Int, String> = mutableMapOf()
 
+    /** Names of maps made in the editor (map id -> name). */
+    val mapNames: MutableMap<Int, String> = mutableMapOf()
+
     private val metaFile get() = File(dir, "project.properties")
     private val baseFile get() = File(dir, "base.rom")
     private val workFile get() = File(dir, "work.rom")
@@ -41,6 +44,9 @@ class Project private constructor(val dir: File) {
         if (metaFile.exists()) metaFile.inputStream().use { props.load(it) }
         props.stringPropertyNames().filter { it.startsWith("flag.") }.forEach { k ->
             k.removePrefix("flag.").toIntOrNull()?.let { flagNames[it] = props.getProperty(k) }
+        }
+        props.stringPropertyNames().filter { it.startsWith("map.") }.forEach { k ->
+            k.removePrefix("map.").toIntOrNull()?.let { mapNames[it] = props.getProperty(k) }
         }
     }
 
@@ -58,8 +64,9 @@ class Project private constructor(val dir: File) {
     }
 
     fun saveMeta() {
-        props.stringPropertyNames().filter { it.startsWith("flag.") }.forEach(props::remove)
+        props.stringPropertyNames().filter { it.startsWith("flag.") || it.startsWith("map.") }.forEach(props::remove)
         flagNames.forEach { (k, v) -> props.setProperty("flag.$k", v) }
+        mapNames.forEach { (k, v) -> props.setProperty("map.$k", v) }
         val tmp = File(dir, "project.properties.tmp")
         tmp.outputStream().use { props.store(it, "NeedleROM project") }
         tmp.renameTo(metaFile)

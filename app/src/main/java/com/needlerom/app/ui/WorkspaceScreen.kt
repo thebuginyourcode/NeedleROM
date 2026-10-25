@@ -118,24 +118,68 @@ private fun tabIcon(t: Tab): ImageVector = when (t) {
 @Composable
 private fun WorldTab(state: AppState, game: PokeRed) {
     var query by remember { mutableStateOf("") }
-    val maps = remember(game) { game.world.maps }
-    val shown = maps.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+    var creating by remember { mutableStateOf(false) }
+    val rev = state.revision
+    val created = remember(game, rev) { game.world.createdMaps().toSet() }
+    val maps = remember(game, rev) { game.world.maps.sortedByDescending { it.id in created } }
+    fun name(id: Int, default: String) = state.project?.mapNames?.get(id) ?: default
+    val shown = maps.filter { query.isBlank() || name(it.id, it.name).contains(query, ignoreCase = true) }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-            leadingIcon = { Icon(Icons.Filled.Search, null) }, placeholder = { Text("Find a map (${maps.size})") })
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(query, { query = it }, Modifier.weight(1f), singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, null) }, placeholder = { Text("Find a map (${maps.size})") })
+            Button(onClick = { creating = true }) { Text("+ New map") }
+        }
         LazyColumn(Modifier.weight(1f)) {
             items(shown, key = { it.id }) { m ->
                 Row(Modifier.fillMaxWidth().clickable { state.go(Route.MapEditor(m.id)) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(m.name, fontWeight = FontWeight.SemiBold)
+                        Text(name(m.id, m.name), fontWeight = FontWeight.SemiBold)
                         Hint("${m.width}×${m.height} blocks")
                     }
-                    if (m.id <= 0x24) Badge("Outdoor")
+                    if (m.id in created) Badge("New") else if (m.id <= 0x24) Badge("Outdoor")
                 }
                 HorizontalDivider()
             }
         }
     }
+    if (creating) NewMapDialog(state, game, onDismiss = { creating = false })
+}
+
+@Composable
+private fun NewMapDialog(state: AppState, game: PokeRed, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("My new room") }
+    var tileset by remember { mutableStateOf(1) }
+    var width by remember { mutableStateOf(6) }
+    var height by remember { mutableStateOf(5) }
+    val tilesets = remember(game) { (0 until game.world.tilesetCount).toList() }
+    fun tsName(id: Int) = com.needlerom.engine.pokered.Names.TILESETS[id] ?: "Tileset $id"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New map") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name") })
+                Chooser("Tileset", tsName(tileset), tilesets, ::tsName, Modifier.fillMaxWidth()) { tileset = it }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NumberField("Width", width, Modifier.weight(1f), 1..30) { width = it }
+                    NumberField("Height", height, Modifier.weight(1f), 1..30) { height = it }
+                }
+                Hint("Sizes are in blocks (2×2 steps). The map starts with one door at the bottom that leads back to wherever the player came from. To get in, point a door on another map at it.")
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                var id = -1
+                if (state.edit("Map created") { g -> id = g.world.createMap(tileset, width, height, g.world.commonBlock(tileset)) }) {
+                    state.project?.let { it.mapNames[id] = name.ifBlank { "New map" }; it.saveMeta() }
+                    onDismiss()
+                    state.go(Route.MapEditor(id))
+                }
+            }) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

@@ -350,7 +350,7 @@ internal object KnownVersions {
     val ALL = listOf(RED, BLUE, YELLOW)
 }
 
-internal object Names {
+object Names {
     val MAPS: Map<Int, String> = mapOf(
         0x00 to "Pallet Town",
         0x01 to "Viridian City",

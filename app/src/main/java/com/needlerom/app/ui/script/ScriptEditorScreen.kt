@@ -50,7 +50,8 @@ import com.needlerom.engine.script.Step
 import com.needlerom.engine.script.Templates
 
 /** Names and pickers shared by the step editors. */
-private class Ctx(val game: PokeRed, val flagNames: Map<Int, String>) {
+private class Ctx(val game: PokeRed, val flagNames: Map<Int, String>, val npcs: List<com.needlerom.engine.pokered.Npc>, val isTrigger: Boolean) {
+    fun npc(i: Int) = npcs.getOrNull(i)?.let { "NPC #${i + 1} (${game.spriteName(it.sprite)})" } ?: "NPC #${i + 1}"
     val species = game.species.map { it.first }
     fun mon(internal: Int) = "#${game.dexOf(internal).toString().padStart(3, '0')} ${game.monName(internal)}"
     fun item(id: Int) = game.itemName(id)
@@ -65,7 +66,8 @@ fun ScriptEditorScreen(state: AppState, r: Route.ScriptEditor) {
     val saved = remember(r) { map.script(r.textId) ?: EventScript(emptyList()) }
     var steps by remember(r) { mutableStateOf(saved.steps) }
     val dirty = steps != saved.steps
-    val ctx = remember(game, state.project) { Ctx(game, state.project?.flagNames ?: emptyMap()) }
+    val isTrigger = remember(map, r.textId) { map.triggers.any { it.textId == r.textId } }
+    val ctx = remember(game, state.project, map) { Ctx(game, state.project?.flagNames ?: emptyMap(), map.npcs, isTrigger) }
     var templates by remember { mutableStateOf(false) }
 
     Screen(
@@ -97,7 +99,12 @@ fun ScriptEditorScreen(state: AppState, r: Route.ScriptEditor) {
                         "Healer" to { Templates.healer() },
                         "Legendary encounter (once)" to { val m = game.internalOfDex(146); Templates.legendary(m, game.monName(m), 50, freeFlag) },
                         "Trainer battle (once)" to { Templates.trainer(1, 1, freeFlag) },
-                    )
+                    ) + if (isTrigger && map.npcs.isNotEmpty()) listOf(
+                        "Trainer spots you and walks over" to {
+                            val y = game.internalOfDex(19); val p = game.internalOfDex(16)
+                            Templates.ambush(map.npcs.size - 1, 1, listOf(com.needlerom.engine.pokered.PartyMon(5, y), com.needlerom.engine.pokered.PartyMon(6, p)))
+                        },
+                    ) else emptyList()
                     opts.forEach { (label, make) ->
                         TextButton(onClick = { steps = make().steps; templates = false }) { Text(label) }
                     }
@@ -215,12 +222,14 @@ private fun title(c: Ctx, s: Step): String = when (s) {
     Step.Heal -> "Heal the party"
     is Step.GiveMoney -> "Give ¥${s.amount}"
     is Step.PlaySound -> "Play sound ${s.sound}"
+    is Step.WalkToPlayer -> "${c.npc(s.npc)} walks up to the player"
 }
 
 private fun detail(c: Ctx, s: Step): String? = when (s) {
     is Step.Say -> "“${s.text.replace('\n', ' ')}”"
     is Step.Ask -> "“${s.question.replace('\n', ' ')}”"
-    is Step.TrainerBattle -> "Win: “${s.winText.replace('\n', ' ')}”"
+    is Step.TrainerBattle -> (s.customTeam?.let { t -> "Custom team: " + t.joinToString { "${c.game.monName(it.species)} Lv${it.level}" } + " · " } ?: "") +
+        "Win: “${s.winText.replace('\n', ' ')}”"
     else -> null
 }
 
@@ -243,7 +252,7 @@ private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit
         "Wild battle" to { Step.WildBattle(ctx.species.first(), 5) },
         "Trainer battle" to { Step.TrainerBattle(1, 1) },
         "Play sound" to { Step.PlaySound(0x86) },
-    )
+    ) + if (ctx.isTrigger && ctx.npcs.isNotEmpty()) listOf("NPC walks up to the player" to { Step.WalkToPlayer(ctx.npcs.size - 1) }) else emptyList()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add step") },
@@ -293,10 +302,32 @@ private fun StepDialog(ctx: Ctx, step: Step, onDismiss: () -> Unit, onSave: (Ste
                     }
                     is Step.TrainerBattle -> {
                         Chooser("Trainer class", ctx.trainer(v.trainerClass), (1..PokeRed.NUM_TRAINER_CLASSES).toList(), ctx::trainer, Modifier.fillMaxWidth()) { s = v.copy(trainerClass = it) }
-                        NumberField("Team #", v.team, Modifier.fillMaxWidth(), 1..64) { s = v.copy(team = it) }
+                        val custom = v.customTeam
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(custom != null, { on ->
+                                s = v.copy(customTeam = if (on) listOf(com.needlerom.engine.pokered.PartyMon(5, ctx.species.first())) else null)
+                            })
+                            Text("Custom team for this battle")
+                        }
+                        if (custom == null) {
+                            NumberField("Team #", v.team, Modifier.fillMaxWidth(), 1..64) { s = v.copy(team = it) }
+                        } else {
+                            custom.forEachIndexed { i, mon ->
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    NumberField("Lv", mon.level, Modifier.weight(0.5f), 1..100) { lv -> s = v.copy(customTeam = custom.toMutableList().also { it[i] = mon.copy(level = lv) }) }
+                                    Chooser("Pokémon", ctx.mon(mon.species), ctx.species, ctx::mon, Modifier.weight(1.2f)) { sp -> s = v.copy(customTeam = custom.toMutableList().also { it[i] = mon.copy(species = sp) }) }
+                                    if (custom.size > 1) TextButton(onClick = { s = v.copy(customTeam = custom.toMutableList().also { it.removeAt(i) }) }) { Text("✕") }
+                                }
+                            }
+                            if (custom.size < 6) TextButton(onClick = { s = v.copy(customTeam = custom + custom.last()) }) { Text("+ Add Pokémon") }
+                        }
                         TextButton(onClick = { winEdit = true }) { Text("When the player wins: “${v.winText.replace('\n', ' ')}”") }
                         TextButton(onClick = { loseEdit = true }) { Text("When the player loses: “${v.loseText.replace('\n', ' ')}”") }
                         Hint("Teams are edited in Data → Trainers.")
+                    }
+                    is Step.WalkToPlayer -> {
+                        Chooser("Who", ctx.npc(v.npc), ctx.npcs.indices.toList(), ctx::npc, Modifier.fillMaxWidth()) { s = v.copy(npc = it) }
+                        Hint("They walk until they're next to the player, then the event continues. Works best with NPCs that stand still.")
                     }
                     is Step.GiveMoney -> NumberField("Amount (¥)", v.amount, Modifier.fillMaxWidth(), 0..999999) { s = v.copy(amount = it) }
                     is Step.PlaySound -> {

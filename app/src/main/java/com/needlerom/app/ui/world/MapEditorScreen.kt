@@ -84,6 +84,7 @@ sealed interface Selection {
     data class Npc(val index: Int) : Selection
     data class Door(val index: Int) : Selection
     data class SignPost(val index: Int) : Selection
+    data class Trigger(val textId: Int) : Selection
 }
 
 @Stable
@@ -142,7 +143,7 @@ fun MapEditorScreen(state: AppState, mapId: Int) {
             TopAppBar(
                 title = {
                     Column {
-                        Text(map.info.name, maxLines = 1)
+                        Text(state.mapName(mapId), maxLines = 1)
                         Text("${map.npcs.size} NPCs · ${map.signs.size} signs · ${map.warps.size} doors",
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -159,7 +160,7 @@ fun MapEditorScreen(state: AppState, mapId: Int) {
                                 onClick = { menu = false; state.edit("Border block set") { map.setBorderBlock(st.block) } })
                             DropdownMenuItem(text = { Text("Fit map to screen") }, onClick = { menu = false; st.fit(map) })
                             map.connections.forEach { (dir, target) ->
-                                DropdownMenuItem(text = { Text("Go $dir: ${game.mapName(target)}") },
+                                DropdownMenuItem(text = { Text("Go $dir: ${state.mapName(target)}") },
                                     onClick = { menu = false; state.replace(com.needlerom.app.Route.MapEditor(target)) })
                             }
                         }
@@ -182,11 +183,13 @@ fun MapEditorScreen(state: AppState, mapId: Int) {
                     when {
                         st.tool == Tool.EVENTS && st.selection != null -> Inspector(state, game, map, st, gfx)
                         st.tool == Tool.PAINT || st.tool == Tool.FILL || st.tool == Tool.PICK -> Palette(map, st, gfx)
-                        st.tool == Tool.EVENTS -> Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Tap to select, drag to move.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        st.tool == Tool.EVENTS -> Row(Modifier.padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val whole = map.triggers.filter { it.x == null }
+                            if (whole.isNotEmpty()) TextButton(onClick = { st.selection = Selection.Trigger(whole.first().textId) }) { Text("Map trigger") }
                             FilledTonalButton(onClick = { adding = "npc" }, enabled = map.canAddNpc, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ NPC") }
                             FilledTonalButton(onClick = { adding = "sign" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Sign") }
                             FilledTonalButton(onClick = { adding = "door" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Door") }
+                            FilledTonalButton(onClick = { adding = "trigger" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Trigger") }
                         }
                         else -> Text("Drag to look around, pinch to zoom.", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
                     }
@@ -212,6 +215,14 @@ fun MapEditorScreen(state: AppState, mapId: Int) {
             val (x, y) = freeStepNear(map, st.centerStep(map))
             var idx = -1
             if (state.edit("Sign added — drag it into place") { idx = map.addSign(x, y, "A new sign!") }) st.selection = Selection.SignPost(idx)
+        }
+        "trigger" -> {
+            adding = null
+            val (x, y) = freeStepNear(map, st.centerStep(map))
+            var tid = -1
+            if (state.edit("Trigger added: when the player steps here, its event runs") {
+                    tid = map.addTrigger(x, y, com.needlerom.engine.script.EventScript(listOf(com.needlerom.engine.script.Step.Say("Something happens!")))).textId
+                }) st.selection = Selection.Trigger(tid)
         }
         "door" -> {
             adding = null
@@ -292,6 +303,14 @@ private fun DrawScope.drawEvents(map: GameMap, st: EditorState, gfx: GfxCache, s
         drawRect(Color(0x669B59D0), at(x, y), Size(s, s))
         drawRect(if (selected) sel else Color(0xFFB57EDC), at(x, y), Size(s, s), style = stroke)
     }
+    map.triggers.forEach { t ->
+        val tx = t.x ?: return@forEach
+        val ty = t.y ?: return@forEach
+        val selected = st.selection == Selection.Trigger(t.textId)
+        val (x, y) = if (selected && drag != null) drag else tx to ty
+        drawRect(Color(0x66FF8C1A), at(x, y), Size(s, s))
+        drawRect(if (selected) sel else Color(0xFFFF8C1A), at(x, y), Size(s, s), style = stroke)
+    }
     map.signs.forEach { g ->
         val selected = st.selection == Selection.SignPost(g.index)
         val (x, y) = if (selected && drag != null) drag else g.x to g.y
@@ -332,6 +351,7 @@ private suspend fun PointerInputScope.gestures(state: AppState, st: EditorState,
             grabbed = map.npcAt(sx, sy)?.let { Selection.Npc(it.index) }
                 ?: map.signAt(sx, sy)?.let { Selection.SignPost(it.index) }
                 ?: map.warpAt(sx, sy)?.let { Selection.Door(it.index) }
+                ?: map.triggerAt(sx, sy)?.let { Selection.Trigger(it.textId) }
             st.selection = grabbed
         }
         // A paint stroke is a single undo step.
@@ -382,6 +402,7 @@ private suspend fun PointerInputScope.gestures(state: AppState, st: EditorState,
                         is Selection.Npc -> map.npcs.getOrNull(g.index)?.let { map.moveNpc(it, to.first, to.second) }
                         is Selection.SignPost -> map.signs.getOrNull(g.index)?.let { map.moveSign(it, to.first, to.second) }
                         is Selection.Door -> map.warps.getOrNull(g.index)?.let { map.moveWarp(it, to.first, to.second) }
+                        is Selection.Trigger -> map.triggers.firstOrNull { it.textId == g.textId }?.let { map.moveTrigger(it, to.first, to.second) }
                         null -> {}
                     }
                 }

@@ -224,7 +224,7 @@ if SRC:
     except FileNotFoundError:
         pass
     out.append("")
-    out.append("internal object Names {")
+    out.append("object Names {")
     out.append("    val MAPS: Map<Int, String> = mapOf(")
     for k in sorted(maps):
         if maps[k].startswith("UNUSED"):
