@@ -67,6 +67,21 @@ class TriggerAndMapTest {
     }
 
     @Test
+    fun npcsCanStillBeAddedAfterSigns() {
+        val bytes = TestRoms.bytes("pokered.gbc") ?: return
+        val g = PokeRed(Rom(bytes))
+        val made = g.world.createMap(tileset = 1, width = 6, height = 5, fillBlock = 1)
+        for (id in listOf(made, 0x00)) { // a new map and Pallet Town
+            val before = g.world.map(id).npcs.size
+            g.world.map(id).addSign(1, 1, "A sign")
+            repeat(3) { g.world.map(id).addNpc(sprite = 3, x = 2 + it, y = 2, movement = Movement.FACE_DOWN, behavior = Behavior.Talk("Hi")) }
+            val m = g.world.map(id)
+            assertEquals(before + 3, m.npcs.size)
+            assertTrue(m.canAddNpc, "room for more NPCs on map $id")
+        }
+    }
+
+    @Test
     fun newMapIsReachableThroughADoor() {
         val bytes = TestRoms.bytes("pokered.gbc") ?: return
         val g = PokeRed(Rom(bytes))

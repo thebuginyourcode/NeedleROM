@@ -340,8 +340,17 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
 
     /** How many NPCs this map can hold without colliding with text the map's scripts show by number. */
     val maxNpcs: Int get() {
-        val used = (npcs.map { it.textId } + signs.map { it.textId } + triggers.map { it.textId }).toSet()
-        val scriptOnly = (1..textTableSize).filter { it !in used }
+        if (id in world.createdMaps()) return 16 // no game script shows this map's texts by number
+        val orig = originalEvents
+        val scriptOnly = if (orig != null && g.exact) {
+            // Texts of the original table that no original NPC or sign uses are shown by the map's
+            // scripts. (Slots the editor left unused when moving signs don't count.)
+            val origUsed = (orig.objects.map { it[5].toInt() and 0x3F } + orig.signs.map { it[2].toInt() and 0xFF }).toSet()
+            (1..g.version.textTableSizes.getOrElse(id) { 0 }).filter { it !in origUsed }
+        } else {
+            val used = (npcs.map { it.textId } + signs.map { it.textId } + triggers.map { it.textId }).toSet()
+            (1..textTableSize).filter { it !in used }
+        }
         return minOf(16, (scriptOnly.minOrNull() ?: Int.MAX_VALUE) - 1).coerceAtLeast(npcs.size)
     }
 
