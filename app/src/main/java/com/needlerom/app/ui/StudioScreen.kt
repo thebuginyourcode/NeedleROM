@@ -88,6 +88,7 @@ fun StudioScreen(state: AppState, files: Files) {
     BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLowest).statusBarsPadding().navigationBarsPadding()) {
         val wide = maxWidth >= 840.dp
         val sideDock = !wide && maxWidth > maxHeight && maxWidth >= 560.dp
+        val dockHeight = maxHeight * 0.42f
         Column(Modifier.fillMaxSize()) {
             Toolbar(state, files, onRename = { renaming = true }, onNewMap = { creatingMap = true })
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -117,7 +118,7 @@ fun StudioScreen(state: AppState, files: Files) {
                     DocTabs(state)
                     Box(Modifier.weight(1f)) { DocView(state, gfx) }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Dock(compactPanes(state), Modifier.fillMaxWidth().then(if (open) Modifier.height(maxHeight * 0.42f) else Modifier),
+                    Dock(compactPanes(state), Modifier.fillMaxWidth().then(if (open) Modifier.height(dockHeight) else Modifier),
                         collapsed = !open, onToggle = { open = !open }) { PaneContent(it, state, game, gfx) { creatingMap = true } }
                 }
             }
