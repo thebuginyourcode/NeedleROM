@@ -3,14 +3,25 @@ package com.needlerom.engine.pokered
 import com.needlerom.engine.gb.Button
 import com.needlerom.engine.gb.GameBoy
 import com.needlerom.engine.rom.Gb
+import com.needlerom.engine.rom.Rom
+import com.needlerom.engine.script.EventScript
+import com.needlerom.engine.script.Step
 
 /** "Playtest from here": a new game that starts on any map tile, with the intro pressed through. */
 object QuickStart {
-    /** A copy of the hack whose new game starts at (x, y) on [mapId] instead of the bedroom. */
-    fun rom(g: PokeRed, mapId: Int, x: Int, y: Int): ByteArray {
-        val out = g.rom.data.copyOf()
+    /**
+     * A copy of the hack whose new game starts at (x, y) on [mapId] instead of the bedroom.
+     * With [starter], the player is handed that Pokémon on arrival: with an empty party,
+     * the first wild battle sends out a glitch Pokémon and crashes the game.
+     */
+    fun rom(g: PokeRed, mapId: Int, x: Int, y: Int, starter: PartyMon? = null): ByteArray {
+        val copy = PokeRed(Rom(g.rom.original).also { it.restore(g.rom.data) })
+        if (starter != null) runCatching {
+            copy.world.map(mapId).addTrigger(null, null, EventScript(listOf(Step.GivePokemon(starter.species, starter.level))))
+        }
+        val out = copy.rom.data.copyOf()
         // NewGameWarp lives in bank 1 in every version.
-        g.world.map(mapId).startSpec(x, y).copyInto(out, Gb.offset(1, g.sym("NewGameWarp")))
+        copy.world.map(mapId).startSpec(x, y).copyInto(out, Gb.offset(1, copy.sym("NewGameWarp")))
         return out
     }
 
@@ -19,7 +30,7 @@ object QuickStart {
      * console with no save, until the player stands at the start. Returns false if it gave up
      * or was [cancelled].
      */
-    fun skipIntro(gb: GameBoy, g: PokeRed, mapId: Int, x: Int, y: Int, cancelled: () -> Boolean = { false }): Boolean {
+    fun skipIntro(gb: GameBoy, g: PokeRed, mapId: Int, x: Int, y: Int, withStarter: Boolean = false, cancelled: () -> Boolean = { false }): Boolean {
         fun frames(n: Int) = repeat(n) { gb.runFrame() }
         fun press(button: Int, after: Int) { gb.buttons = button; frames(4); gb.buttons = 0; frames(after) }
         val wCurMap = g.sym("wCurMap"); val wX = g.sym("wXCoord"); val wY = g.sym("wYCoord")
@@ -27,14 +38,14 @@ object QuickStart {
         // (picture id at wSpriteStateData1, $C100) and the hidden window (hWY = $90, $FFB0)
         // that mean the overworld is running. Both addresses are the same in every version.
         fun arrived() = gb.read(0xC100) != 0 && gb.read(wCurMap) == mapId && gb.read(wX) == x && gb.read(wY) == y
-        fun ready() = arrived() && gb.read(0xFFB0) == 0x90
+        fun ready() = arrived() && gb.read(0xFFB0) == 0x90 && (!withStarter || gb.read(g.sym("wPartyCount")) > 0)
         frames(300)
         repeat(40) { press(Button.START, 30) } // intro and title, up to the NEW GAME menu
         press(Button.A, 60)
         repeat(500) {
             if (ready()) return true
             if (cancelled()) return false
-            // Once on the map, B finishes the last text without talking to anyone.
+            // Once on the map, B finishes the texts (and declines a nickname) without talking to anyone.
             press(if (arrived()) Button.B else Button.A, 10)
         }
         return false

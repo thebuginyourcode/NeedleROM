@@ -25,6 +25,18 @@ class Project private constructor(val dir: File) {
         get() = props.getProperty("notes", "")
         set(v) { props.setProperty("notes", v) }
 
+    /**
+     * The Pokémon handed to the player when playtesting from a map: an internal species id,
+     * 0 for none, or -1 for the default (Pikachu).
+     */
+    var testSpecies: Int
+        get() = props.getProperty("test.species")?.toIntOrNull() ?: -1
+        set(v) { props.setProperty("test.species", v.toString()) }
+
+    var testLevel: Int
+        get() = props.getProperty("test.level")?.toIntOrNull() ?: 5
+        set(v) { props.setProperty("test.level", v.toString()) }
+
     val gameName: String get() = props.getProperty("game", "Pokémon")
     val modified: Long get() = workFile.lastModified()
 

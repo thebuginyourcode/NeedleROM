@@ -127,5 +127,22 @@ class QuickStartTest {
         assertTrue(com.needlerom.engine.pokered.QuickStart.skipIntro(gb, g, viridian, 21, 10), "reached the start tile")
         TestRoms.screenshot(gb, "quickstart_viridian")
         assertEquals(viridian, gb.read(g.sym("wCurMap")))
+        assertEquals(0, gb.read(g.sym("wPartyCount")))
+    }
+
+    @Test
+    fun startsWithATestPokemon() {
+        val bytes = TestRoms.bytes("pokered.gbc") ?: return
+        val g = PokeRed(Rom(bytes))
+        val viridian = 0x01
+        val pikachu = PartyMon(5, 0x54)
+        val rom = com.needlerom.engine.pokered.QuickStart.rom(g, viridian, 21, 10, pikachu)
+        assertEquals(bytes.toList(), g.rom.data.toList(), "the hack itself is untouched")
+        val gb = GameBoy(rom)
+        assertTrue(com.needlerom.engine.pokered.QuickStart.skipIntro(gb, g, viridian, 21, 10, withStarter = true), "reached the start tile")
+        TestRoms.screenshot(gb, "quickstart_pikachu")
+        assertEquals(1, gb.read(g.sym("wPartyCount")))
+        assertEquals(0x54, gb.read(g.sym("wPartyCount") + 1))
+        assertEquals(21 to 10, gb.read(g.sym("wXCoord")) to gb.read(g.sym("wYCoord")))
     }
 }

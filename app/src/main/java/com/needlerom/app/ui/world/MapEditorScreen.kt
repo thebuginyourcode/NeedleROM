@@ -72,6 +72,8 @@ import androidx.compose.ui.unit.dp
 import com.needlerom.app.AppState
 import com.needlerom.app.ui.Chooser
 import com.needlerom.app.ui.NeedleIcons
+import com.needlerom.app.ui.NumberField
+import androidx.compose.foundation.layout.width
 import com.needlerom.app.ui.PropRow
 import com.needlerom.app.ui.PropSection
 import com.needlerom.app.ui.Hint
@@ -293,8 +295,32 @@ private fun MapProperties(state: AppState, map: GameMap, st: EditorState, gfx: G
                 OutlinedButton(onClick = { state.go(com.needlerom.app.Route.WildEditor(map.id)) }) { Text("Wild Pokémon") }
                 OutlinedButton(onClick = { playHere(state, map, st) }) { Text("Play here") }
             }
+            TestPokemon(state)
         }
         Hint("Tip: pick the Objects tool and tap something on the map to edit it.", Modifier.padding(12.dp))
+    }
+}
+
+/** The Pokémon "Play here" gives the player (a new game starts with none). */
+@Composable
+private fun TestPokemon(state: AppState) {
+    val game = state.game ?: return
+    val project = state.project ?: return
+    var species by remember(project) { mutableStateOf(project.testSpecies) }
+    var level by remember(project) { mutableStateOf(project.testLevel) }
+    val options = remember(game) { listOf(0) + game.species.map { it.first } }
+    fun label(id: Int) = when (id) {
+        0 -> "None (wild battles will glitch)"
+        -1 -> game.monName(game.internalOfDex(25))
+        else -> game.monName(id)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Chooser("Play here with", label(species), options, ::label, Modifier.weight(1f)) {
+            species = it; project.testSpecies = it; project.saveMeta()
+        }
+        if (species != 0) NumberField("Lv", level, Modifier.width(72.dp), 1..100) {
+            level = it; project.testLevel = it; project.saveMeta()
+        }
     }
 }
 

@@ -62,7 +62,15 @@ fun PlaytestScreen(state: AppState, start: Triple<Int, Int, Int>? = null) {
             // A fresh game that begins on the chosen tile; it never touches the real playtest save.
             val (map, x, y) = start
             val sav = java.io.File(project.saveFile.parentFile, "quick.sav").apply { delete() }
-            Playtest(QuickStart.rom(game, map, x, y), sav) { gb, cancelled -> QuickStart.skipIntro(gb, game, map, x, y, cancelled) }
+            // Without a Pokémon the first wild battle glitches and crashes, so hand one over.
+            val starter = when (val sp = project.testSpecies) {
+                0 -> null
+                -1 -> com.needlerom.engine.pokered.PartyMon(project.testLevel, game.internalOfDex(25))
+                else -> com.needlerom.engine.pokered.PartyMon(project.testLevel, sp)
+            }
+            Playtest(QuickStart.rom(game, map, x, y, starter), sav) { gb, cancelled ->
+                QuickStart.skipIntro(gb, game, map, x, y, withStarter = starter != null, cancelled = cancelled)
+            }
         }
     }
     var preparing by remember(play) { mutableStateOf(play.preparing) }
