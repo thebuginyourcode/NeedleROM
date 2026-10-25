@@ -22,7 +22,7 @@ SYMBOLS = [
     "MoveNames", "Moves", "PokedexOrder", "TypeNames", "Overworld_Coll", "MapSongBanks", "NewGameWarp",
     # home routines used by the script engine
     "TextScriptEnd", "Bankswitch", "PrintText", "GiveItem", "GivePokemon", "YesNoChoice",
-    "IsItemInBag", "Predef", "PlaySound", "WaitForSoundToFinish", "DelayFrames",
+    "IsItemInBag", "Predef", "PlaySound", "PlayCry", "GetCryData", "PlayMusic", "WaitForSoundToFinish", "DelayFrames",
     "AddAmountSoldToMoney", "RemoveItemByID", "UpdateSprites", "LoadGBPal",
     "GBPalWhiteOutWithDelay3", "TextBoxBorder", "DisplayTextID", "PickUpItemText", "TalkToTrainer",
     # RAM

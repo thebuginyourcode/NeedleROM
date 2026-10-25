@@ -31,6 +31,34 @@ class ScriptIntegrationTest {
     }
 
     @Test
+    fun cryAndMusicStepsPlayAndContinue() {
+        val bytes = TestRoms.bytes("pokered.gbc") ?: return
+        val g = PokeRed(Rom(bytes))
+        val surf = ScriptEngine.sounds(g).music.first { it.third == "Surfing" }
+        g.world.map(0x26).addSign(2, 6, "placeholder")
+        val sign = g.world.map(0x26).signs.last()
+        g.world.map(0x26).setScript(sign.textId, EventScript(listOf(
+            Step.Say("Listen!"),
+            Step.PlayCry(0x54), // Pikachu
+            Step.PlayMusic(surf.first, surf.second),
+            Step.PlaySound(ScriptEngine.sounds(g).effects.first { it.second == "Get Key Item" }.first),
+            Step.GiveItem(potion, 3),
+        )))
+        val gb = GameBoy(g.rom.data)
+        val d = Driver(gb)
+        d.newGameToBedroom()
+        val px = gb.read(g.sym("wXCoord"))
+        // Walk to the tile right of the sign, face it and read it.
+        repeat(px - 3) { d.press(Button.LEFT, hold = 16, after = 4) }
+        d.press(Button.LEFT, hold = 2, after = 20)
+        d.press(Button.A, after = 60)
+        repeat(30) { d.press(Button.B, after = 15) }
+        assertTrue(potion to 3 in bag(gb, g), "the event ran past the cry and music: ${bag(gb, g)}")
+        assertEquals(surf.first, gb.read(TestRoms.sym("pokered.sym", "wLastMusicSoundID")))
+        assertEquals(surf.second, gb.read(TestRoms.sym("pokered.sym", "wAudioROMBank")))
+    }
+
+    @Test
     fun scriptedSignGivesItemsAndPokemonOnce() {
         val bytes = TestRoms.bytes("pokered.gbc") ?: return
         // 1. Find where the player starts.

@@ -45,10 +45,12 @@ DEF OP_IF_NO_ITEM   EQU 14 ; db item ; dw jump_if_missing
 DEF OP_TAKE_ITEM    EQU 15 ; db item
 DEF OP_SOUND        EQU 16 ; db sound id
 DEF OP_WALK_TO_PLAYER EQU 17 ; db sprite index (1-based); pauses the event until the walk ends
-DEF NUM_OPS         EQU 18
+DEF OP_CRY          EQU 18 ; db species (internal id)
+DEF OP_MUSIC        EQU 19 ; db music id, audio bank
+DEF NUM_OPS         EQU 20
 
 SECTION "NeedleHeader", ROMX[$4000], BANK[1]
-	db "NEEDLE", 3, 0
+	db "NEEDLE", 4, 0
 
 SECTION "NeedleRun", ROMX[$4008], BANK[1]
 	jp NeedleRun
@@ -128,7 +130,7 @@ RunScript:
 Handlers:
 	dw Op_End, Op_Text, Op_YesNo, Op_GiveItem, Op_GiveMon, Op_SetFlag, Op_ClearFlag
 	dw Op_IfFlag, Op_IfNotFlag, Op_Jump, Op_WildBattle, Op_Trainer, Op_Heal
-	dw Op_GiveMoney, Op_IfNoItem, Op_TakeItem, Op_Sound, Op_WalkToPlayer
+	dw Op_GiveMoney, Op_IfNoItem, Op_TakeItem, Op_Sound, Op_WalkToPlayer, Op_Cry, Op_Music
 
 Op_End:
 	pop hl
@@ -319,6 +321,28 @@ Op_Sound:
 	push hl
 	call PlaySound
 	call WaitForSoundToFinish
+	pop hl
+	jp RunScript
+
+Op_Cry:
+	pop hl
+	ld a, [hli]
+	push hl
+	call PlayCry ; waits for the cry to finish
+	pop hl
+	jp RunScript
+
+; Plays until the next map change (or another music step).
+Op_Music:
+	pop hl
+	ld a, [hli]
+	ld b, a
+	ld a, [hli]
+	ld c, a
+	push hl
+	ld a, b
+	ld [wLastMusicSoundID], a
+	call PlayMusic
 	pop hl
 	jp RunScript
 

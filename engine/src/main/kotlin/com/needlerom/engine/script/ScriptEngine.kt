@@ -19,12 +19,12 @@ object ScriptEngine {
     private const val TABLE_ENTRIES = 255
     private const val TRIGGERS = 0x0600 // $4600
     private const val TRIGGER_ENTRIES = 63
-    private const val FORMAT = 3
+    private const val FORMAT = 4
     private const val TRIGGER_FORMAT = 2 // first format with the trigger table
     private val MAGIC = "NEEDLE".toByteArray()
 
     /** Home routines the interpreter calls; all must be unmodified for scripts to be offered. */
-    private val REQUIRED = listOf("Bankswitch", "TextScriptEnd", "PrintText", "GiveItem", "GivePokemon", "YesNoChoice", "IsItemInBag", "PlaySound")
+    private val REQUIRED = listOf("Bankswitch", "TextScriptEnd", "PrintText", "GiveItem", "GivePokemon", "YesNoChoice", "IsItemInBag", "PlaySound", "PlayCry", "PlayMusic")
 
     private fun versionKey(g: PokeRed) = when (g.version) {
         KnownVersions.RED -> "RED"
@@ -33,6 +33,9 @@ object ScriptEngine {
     }
 
     fun isSupported(g: PokeRed): Boolean = REQUIRED.all { g.homeRoutineIntact(it) }
+
+    /** Named sound effects and music this game version can play from an event. */
+    fun sounds(g: PokeRed): Sounds.Table = if (g.version.isYellow) Sounds.YELLOW else Sounds.RED_BLUE
 
     private fun bankStart(g: PokeRed) = g.world.engineBank * Gb.BANK
 

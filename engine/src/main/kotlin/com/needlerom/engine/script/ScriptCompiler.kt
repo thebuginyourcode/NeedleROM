@@ -11,6 +11,7 @@ internal class ScriptCompiler(private val wEventFlags: Int) {
         const val SET_FLAG = 5; const val CLEAR_FLAG = 6; const val IF_FLAG = 7; const val IF_NOT_FLAG = 8; const val JUMP = 9
         const val WILD = 10; const val TRAINER = 11; const val HEAL = 12; const val MONEY = 13; const val IF_NO_ITEM = 14
         const val TAKE_ITEM = 15; const val SOUND = 16; const val WALK = 17
+        const val CRY = 18; const val MUSIC = 19
     }
 
     private val code = ByteArrayOutputStream()
@@ -99,6 +100,8 @@ internal class ScriptCompiler(private val wEventFlags: Int) {
             }
             is Step.PlaySound -> { b(Op.SOUND); b(s.sound) }
             is Step.WalkToPlayer -> { b(Op.WALK); b(s.npc + 1) }
+            is Step.PlayCry -> { b(Op.CRY); b(s.species) }
+            is Step.PlayMusic -> { b(Op.MUSIC); b(s.music); b(s.bank) }
         }
     }
 

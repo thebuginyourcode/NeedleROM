@@ -54,6 +54,12 @@ sealed interface Step {
     data class GiveMoney(val amount: Int) : Step
 
     data class PlaySound(val sound: Int) : Step
+
+    /** Plays a Pokémon's cry ([species] is the internal id). */
+    data class PlayCry(val species: Int) : Step
+
+    /** Switches the music until the next map change. */
+    data class PlayMusic(val music: Int, val bank: Int) : Step
 }
 
 data class EventScript(val steps: List<Step>)
@@ -155,6 +161,8 @@ object ScriptCodec {
             Step.Heal -> sb.append("heal")
             is Step.GiveMoney -> sb.append("money ${s.amount}")
             is Step.PlaySound -> sb.append("sound ${s.sound}")
+            is Step.PlayCry -> sb.append("cry ${s.species}")
+            is Step.PlayMusic -> sb.append("music ${s.music} ${s.bank}")
         }
         sb.append(';')
     }
@@ -208,6 +216,8 @@ object ScriptCodec {
                     "heal" -> Step.Heal
                     "money" -> Step.GiveMoney(int())
                     "sound" -> Step.PlaySound(int())
+                    "cry" -> Step.PlayCry(int())
+                    "music" -> Step.PlayMusic(int(), int())
                     else -> throw IllegalArgumentException("Unknown step '$w'")
                 }
                 ws(); if (i < s.length && s[i] == ';') i++

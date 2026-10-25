@@ -25,7 +25,7 @@ NEEDED = [
     "DisplayTextID", "wXCoord", "wYCoord", "wStatusFlags5", "wJoyIgnore", "MoveSprite", "wNPCMovementDirections2",
     "hSpriteIndex", "hNPCSpriteOffset", "hNPCPlayerRelativePosPerspective", "hNPCPlayerYDistance", "hNPCPlayerXDistance",
     "wDoNotWaitForButtonPressAfterDisplayingText", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer",
-    "wUnusedMapVariable", "wUnusedPlayerDataByte", "wUnusedObtainedBadges",
+    "wUnusedMapVariable", "wUnusedPlayerDataByte", "wUnusedObtainedBadges", "PlayCry", "PlayMusic", "wLastMusicSoundID",
 ]
 FAR = ["HealParty", "RemoveItemByID", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer"]
 
