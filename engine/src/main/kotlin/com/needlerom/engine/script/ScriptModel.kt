@@ -63,18 +63,96 @@ sealed interface Step {
 
     /** Switches the music until the next map change. */
     data class PlayMusic(val music: Int, val bank: Int) : Step
+
+    /** Makes an NPC on this map disappear or appear (remembered in the player's save). */
+    data class HideNpc(val npc: Int) : Step
+    data class ShowNpc(val npc: Int) : Step
+
+    /** Turns an NPC ([who] = index) or the player ([who] = -1) to face [dir]. */
+    data class Face(val who: Int, val dir: Dir) : Step
+
+    /** An NPC walks the given steps; the event waits until they're done. */
+    data class MoveNpc(val npc: Int, val path: List<Dir>) : Step
+
+    /** The player walks the given steps (through anything in the way); the event waits. */
+    data class MovePlayer(val path: List<Dir>) : Step
+
+    /** Pauses for [frames] (60 per second). */
+    data class Wait(val frames: Int) : Step
+
+    data object FadeOut : Step
+    data object FadeIn : Step
+
+    /** Sends the player through door [door] (1-based) of [map] when the event ends. */
+    data class Warp(val map: Int, val door: Int) : Step
+
+    /** Badges are 0-7 (Boulder … Earth). */
+    data class GiveBadge(val badge: Int) : Step
+    data class IfBadge(val badge: Int, val then: List<Step>, val otherwise: List<Step>) : Step
+
+    /** Takes money (all of it, if the player has less). */
+    data class TakeMoney(val amount: Int) : Step
+
+    /** Branches on whether the player has at least [amount] money. */
+    data class IfMoney(val amount: Int, val then: List<Step>, val otherwise: List<Step>) : Step
+
+    /** Branches on whether a Pokémon of [species] (internal id) is in the party. */
+    data class IfHasPokemon(val species: Int, val then: List<Step>, val otherwise: List<Step>) : Step
+
+    /** Runs [then] with a [percent] chance, otherwise [otherwise]. */
+    data class IfChance(val percent: Int, val then: List<Step>, val otherwise: List<Step>) : Step
+
+    /** Stops the event here. */
+    data object End : Step
+}
+
+/** A step direction, with its codes for NPC movement, the joypad and facing. */
+enum class Dir(val letter: Char, val npc: Int, val pad: Int, val facing: Int) {
+    DOWN('D', 0x00, 0x80, 0), UP('U', 0x40, 0x40, 4), LEFT('L', 0x80, 0x20, 8), RIGHT('R', 0xC0, 0x10, 12);
+
+    companion object {
+        fun of(c: Char) = entries.first { it.letter == c }
+        fun path(s: String): List<Dir> = if (s == "-") emptyList() else s.map(::of)
+        fun text(path: List<Dir>): String = if (path.isEmpty()) "-" else path.joinToString("") { it.letter.toString() }
+    }
 }
 
 data class EventScript(val steps: List<Step>) {
-    /** True if any step makes someone walk (the event then pauses and resumes). */
-    fun walks(): Boolean = walks(steps)
+    /**
+     * True if the event needs the map's per-frame hook: steps that make someone walk (the
+     * event pauses and resumes) and warps (started from the map's script).
+     */
+    fun walks(): Boolean = walks(steps) || all().any { it is Step.Warp }
+
+    /** NPCs (by index) that the event shows or hides, anywhere in it. */
+    fun toggledNpcs(): Set<Int> = all(steps).mapNotNull { (it as? Step.HideNpc)?.npc ?: (it as? Step.ShowNpc)?.npc }.toSet()
+
+    /** Every step, including those inside branches. */
+    fun all(list: List<Step> = steps): List<Step> = list.flatMap { s ->
+        listOf(s) + when (s) {
+            is Step.Ask -> all(s.yes) + all(s.no)
+            is Step.IfFlag -> all(s.then) + all(s.otherwise)
+            is Step.IfHasItem -> all(s.then) + all(s.otherwise)
+            is Step.IfBadge -> all(s.then) + all(s.otherwise)
+            is Step.IfMoney -> all(s.then) + all(s.otherwise)
+            is Step.IfHasPokemon -> all(s.then) + all(s.otherwise)
+            is Step.IfChance -> all(s.then) + all(s.otherwise)
+            is Step.GiveItem -> all(s.ifBagFull)
+            is Step.GivePokemon -> all(s.ifNoRoom)
+            else -> emptyList()
+        }
+    }
 
     private fun walks(list: List<Step>): Boolean = list.any { s ->
         when (s) {
-            is Step.WalkToPlayer, is Step.Lead -> true
+            is Step.WalkToPlayer, is Step.Lead, is Step.MoveNpc, is Step.MovePlayer -> true
             is Step.Ask -> walks(s.yes) || walks(s.no)
             is Step.IfFlag -> walks(s.then) || walks(s.otherwise)
             is Step.IfHasItem -> walks(s.then) || walks(s.otherwise)
+            is Step.IfBadge -> walks(s.then) || walks(s.otherwise)
+            is Step.IfMoney -> walks(s.then) || walks(s.otherwise)
+            is Step.IfHasPokemon -> walks(s.then) || walks(s.otherwise)
+            is Step.IfChance -> walks(s.then) || walks(s.otherwise)
             is Step.GiveItem -> walks(s.ifBagFull)
             is Step.GivePokemon -> walks(s.ifNoRoom)
             else -> false
@@ -182,6 +260,22 @@ object ScriptCodec {
             is Step.PlaySound -> sb.append("sound ${s.sound}")
             is Step.PlayCry -> sb.append("cry ${s.species}")
             is Step.PlayMusic -> sb.append("music ${s.music} ${s.bank}")
+            is Step.HideNpc -> sb.append("hide ${s.npc}")
+            is Step.ShowNpc -> sb.append("show ${s.npc}")
+            is Step.Face -> sb.append("face ${s.who} ${s.dir.letter}")
+            is Step.MoveNpc -> sb.append("move ${s.npc} ${Dir.text(s.path)}")
+            is Step.MovePlayer -> sb.append("pmove ${Dir.text(s.path)}")
+            is Step.Wait -> sb.append("wait ${s.frames}")
+            Step.FadeOut -> sb.append("fadeout")
+            Step.FadeIn -> sb.append("fadein")
+            is Step.Warp -> sb.append("warp ${s.map} ${s.door}")
+            is Step.GiveBadge -> sb.append("badge ${s.badge}")
+            is Step.IfBadge -> { sb.append("ifbadge ${s.badge}"); block(s.then, sb); block(s.otherwise, sb) }
+            is Step.TakeMoney -> sb.append("pay ${s.amount}")
+            is Step.IfMoney -> { sb.append("ifmoney ${s.amount}"); block(s.then, sb); block(s.otherwise, sb) }
+            is Step.IfHasPokemon -> { sb.append("ifmon ${s.species}"); block(s.then, sb); block(s.otherwise, sb) }
+            is Step.IfChance -> { sb.append("chance ${s.percent}"); block(s.then, sb); block(s.otherwise, sb) }
+            Step.End -> sb.append("end")
         }
         sb.append(';')
     }
@@ -238,6 +332,22 @@ object ScriptCodec {
                     "sound" -> Step.PlaySound(int())
                     "cry" -> Step.PlayCry(int())
                     "music" -> Step.PlayMusic(int(), int())
+                    "hide" -> Step.HideNpc(int())
+                    "show" -> Step.ShowNpc(int())
+                    "face" -> Step.Face(int(), Dir.of(word()[0]))
+                    "move" -> Step.MoveNpc(int(), Dir.path(word()))
+                    "pmove" -> Step.MovePlayer(Dir.path(word()))
+                    "wait" -> Step.Wait(int())
+                    "fadeout" -> Step.FadeOut
+                    "fadein" -> Step.FadeIn
+                    "warp" -> Step.Warp(int(), int())
+                    "badge" -> Step.GiveBadge(int())
+                    "ifbadge" -> Step.IfBadge(int(), block(), block())
+                    "pay" -> Step.TakeMoney(int())
+                    "ifmoney" -> Step.IfMoney(int(), block(), block())
+                    "ifmon" -> Step.IfHasPokemon(int(), block(), block())
+                    "chance" -> Step.IfChance(int(), block(), block())
+                    "end" -> Step.End
                     else -> throw IllegalArgumentException("Unknown step '$w'")
                 }
                 ws(); if (i < s.length && s[i] == ';') i++

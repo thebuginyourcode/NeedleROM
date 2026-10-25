@@ -5,14 +5,19 @@ import com.needlerom.engine.pokered.Text
 import java.io.ByteArrayOutputStream
 
 /** Compiles an [EventScript] into NeedleScript bytecode plus its texts, for a given address. */
-internal class ScriptCompiler(private val wEventFlags: Int) {
+internal class ScriptCompiler(private val wEventFlags: Int, private val wObtainedBadges: Int) {
     private object Op {
         const val END = 0; const val TEXT = 1; const val YESNO = 2; const val GIVE_ITEM = 3; const val GIVE_MON = 4
         const val SET_FLAG = 5; const val CLEAR_FLAG = 6; const val IF_FLAG = 7; const val IF_NOT_FLAG = 8; const val JUMP = 9
         const val WILD = 10; const val TRAINER = 11; const val HEAL = 12; const val MONEY = 13; const val IF_NO_ITEM = 14
         const val TAKE_ITEM = 15; const val SOUND = 16; const val WALK = 17
-        const val CRY = 18; const val MUSIC = 19; const val LEAD = 20
+        const val CRY = 18; const val MUSIC = 19; const val LEAD = 20; const val HIDE = 21; const val SHOW = 22
+        const val FACE = 23; const val MOVE_NPC = 24; const val MOVE_PLAYER = 25; const val WAIT = 26
+        const val FADE_OUT = 27; const val FADE_IN = 28; const val WARP = 29; const val IF_LESS_MONEY = 30
+        const val TAKE_MONEY = 31; const val IF_NO_MON = 32; const val IF_RANDOM = 33
     }
+
+    private companion object { const val MAX_PATH = 50 }
 
     private val code = ByteArrayOutputStream()
     private val fixups = mutableListOf<Pair<Int, () -> Int>>() // code offset -> resolved CPU address
@@ -32,6 +37,11 @@ internal class ScriptCompiler(private val wEventFlags: Int) {
         // Final messages end with "done" (the game then waits once); others "prompt".
         val bytes = byteArrayOf(0) + Text.encodeDialogue(text) + (if (last) Text.DONE else Text.PROMPT).toByte() + Text.END.toByte()
         texts += placeholder() to bytes
+    }
+
+    private fun bcd(amount: Int) {
+        val d = amount.coerceIn(0, 999999).toString().padStart(6, '0')
+        for (k in 0 until 3) b(((d[k * 2] - '0') shl 4) or (d[k * 2 + 1] - '0'))
     }
 
     private fun flag(n: Int) {
@@ -93,14 +103,54 @@ internal class ScriptCompiler(private val wEventFlags: Int) {
                 texts += placeholder() to (byteArrayOf(0) + Text.encodeDialogue(s.loseText) + Text.PROMPT.toByte() + Text.END.toByte())
             }
             Step.Heal -> b(Op.HEAL)
-            is Step.GiveMoney -> {
-                b(Op.MONEY)
-                val d = s.amount.coerceIn(0, 999999).toString().padStart(6, '0')
-                for (k in 0 until 3) b(((d[k * 2] - '0') shl 4) or (d[k * 2 + 1] - '0'))
-            }
+            is Step.GiveMoney -> { b(Op.MONEY); bcd(s.amount) }
             is Step.PlaySound -> { b(Op.SOUND); b(s.sound) }
             is Step.WalkToPlayer -> { b(Op.WALK); b(s.npc + 1) }
             is Step.Lead -> { b(Op.LEAD); b(s.npc + 1); b(s.x); b(s.y) }
+            is Step.HideNpc -> { b(Op.HIDE); b(s.npc + 1) }
+            is Step.ShowNpc -> { b(Op.SHOW); b(s.npc + 1) }
+            is Step.Face -> { b(Op.FACE); b(if (s.who < 0) 0 else s.who + 1); b(s.dir.facing) }
+            is Step.MoveNpc -> { b(Op.MOVE_NPC); b(s.npc + 1); s.path.take(MAX_PATH).forEach { b(it.npc) }; b(0xFF) }
+            is Step.MovePlayer -> { b(Op.MOVE_PLAYER); s.path.take(MAX_PATH).forEach { b(it.pad) }; b(0) }
+            is Step.Wait -> { b(Op.WAIT); b(s.frames.coerceIn(1, 255)) }
+            Step.FadeOut -> b(Op.FADE_OUT)
+            Step.FadeIn -> b(Op.FADE_IN)
+            is Step.Warp -> { b(Op.WARP); b(s.map); b((s.door - 1).coerceAtLeast(0)) }
+            is Step.GiveBadge -> { b(Op.SET_FLAG); w(wObtainedBadges); b(1 shl (s.badge and 7)) }
+            is Step.IfBadge -> {
+                val missing = Label(); val end = Label()
+                b(Op.IF_NOT_FLAG); w(wObtainedBadges); b(1 shl (s.badge and 7)); ref(missing)
+                steps(s.then, last); b(Op.JUMP); ref(end)
+                mark(missing); steps(s.otherwise, last)
+                mark(end)
+            }
+            is Step.TakeMoney -> { b(Op.TAKE_MONEY); bcd(s.amount) }
+            is Step.IfMoney -> {
+                val less = Label(); val end = Label()
+                b(Op.IF_LESS_MONEY); bcd(s.amount); ref(less)
+                steps(s.then, last); b(Op.JUMP); ref(end)
+                mark(less); steps(s.otherwise, last)
+                mark(end)
+            }
+            is Step.IfHasPokemon -> {
+                val missing = Label(); val end = Label()
+                b(Op.IF_NO_MON); b(s.species); ref(missing)
+                steps(s.then, last); b(Op.JUMP); ref(end)
+                mark(missing); steps(s.otherwise, last)
+                mark(end)
+            }
+            is Step.IfChance -> when {
+                s.percent >= 100 -> steps(s.then, last)
+                s.percent <= 0 -> steps(s.otherwise, last)
+                else -> {
+                    val hit = Label(); val end = Label()
+                    b(Op.IF_RANDOM); b(s.percent * 256 / 100); ref(hit)
+                    steps(s.otherwise, last); b(Op.JUMP); ref(end)
+                    mark(hit); steps(s.then, last)
+                    mark(end)
+                }
+            }
+            Step.End -> b(Op.END)
             is Step.PlayCry -> { b(Op.CRY); b(s.species) }
             is Step.PlayMusic -> { b(Op.MUSIC); b(s.music); b(s.bank) }
         }

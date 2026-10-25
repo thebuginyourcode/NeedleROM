@@ -390,8 +390,20 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
     fun removeNpc(n: Npc) {
         if (n.index < firstAddedNpc) throw EditException("NPCs from the original game can't be deleted (the game's scripts refer to them by number)")
         val e = requireEvents()
-        e.objects.removeAt(n.index)
-        writeEvents(e, "Remove NPC from ${info.name}", true)
+        rom.batch {
+            e.objects.removeAt(n.index)
+            writeEvents(e, "Remove NPC from ${info.name}", true)
+            ScriptEngine.npcRemoved(g, id, n.index + 1)
+        }
+    }
+
+    /** Whether events can show and hide [n], and how it starts; null if they can't. */
+    fun npcVisibility(n: Npc): ScriptEngine.Visibility? = ScriptEngine.visibility(g, id, n.index + 1)
+
+    /** Lets events show and hide [n] ([controlled]), starting hidden if [startHidden]. */
+    fun setNpcVisibility(n: Npc, controlled: Boolean, startHidden: Boolean) {
+        if (controlled) ScriptEngine.setVisibility(g, id, n.index + 1, startHidden)
+        else ScriptEngine.removeVisibility(g, id, n.index + 1)
     }
 
     fun addSign(x: Int, y: Int, text: String): Int {
@@ -444,9 +456,7 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
     fun addTrigger(x: Int?, y: Int?, script: EventScript): ScriptEngine.Trigger {
         if (x != null && y != null && !inMap(x, y)) throw EditException("Outside the map")
         val e = requireEvents()
-        val used = ScriptEngine.usedTriggerFlags(g)
-        val flag = (Flags.COUNT - 1 downTo 64).firstOrNull { it !in used }
-            ?: throw EditException("Out of trigger flags")
+        val flag = ScriptEngine.freeEngineFlag(g)
         var t: ScriptEngine.Trigger? = null
         rom.batch {
             ScriptEngine.install(g)

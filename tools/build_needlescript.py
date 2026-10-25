@@ -28,8 +28,12 @@ NEEDED = [
     "wUnusedMapVariable", "wUnusedPlayerDataByte", "wUnusedObtainedBadges", "PlayCry", "PlayMusic", "wLastMusicSoundID",
     "wSpriteStateData2", "hNPCPlayerRelativePosFlags", "wSimulatedJoypadStatesEnd",
     "wSimulatedJoypadStatesIndex", "StartSimulatingJoypadStates",
+    "MarkTownVisitedAndLoadToggleableObjects", "wToggleableObjectList", "wToggleableObjectFlags", "UpdateSprites",
+    "wSpritePlayerStateData1FacingDirection", "hSpriteFacingDirection", "SetSpriteFacingDirectionAndDelay",
+    "DelayFrames", "GBFadeOutToBlack", "GBFadeInFromBlack", "hWarpDestinationMap", "wDestinationWarpID", "wLastMap",
+    "wStatusFlags3", "HasEnoughMoney", "SubtractAmountPaidFromMoney", "wPlayerMoney", "wPartySpecies", "Random",
 ]
-FAR = ["HealParty", "RemoveItemByID", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer"]
+FAR = ["HealParty", "RemoveItemByID", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer", "MarkTownVisitedAndLoadToggleableObjects"]
 
 
 def load_sym(path):

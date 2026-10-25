@@ -19,7 +19,7 @@ object ScriptEngine {
     private const val TABLE_ENTRIES = 255
     private const val TRIGGERS = 0x0600 // $4600
     private const val TRIGGER_ENTRIES = 63
-    private const val FORMAT = 5
+    private const val FORMAT = 6
     private const val TRIGGER_FORMAT = 2 // first format with the trigger table
     private val MAGIC = "NEEDLE".toByteArray()
 
@@ -132,7 +132,11 @@ object ScriptEngine {
     /** Compiles and stores [script] for the given map and text id (replacing any previous one). */
     fun put(g: PokeRed, map: Int, textId: Int, script0: EventScript) {
         val script = materializeTeams(g, script0)
-        val compiler = ScriptCompiler(g.sym("wEventFlags"))
+        // NPCs the event shows or hides must be registered (visible at first, unless set otherwise).
+        val npcCount = g.world.map(map).npcs.size
+        script.toggledNpcs().filter { it < npcCount && visibility(g, map, it + 1) == null }
+            .forEach { setVisibility(g, map, it + 1, startHidden = false) }
+        val compiler = ScriptCompiler(g.sym("wEventFlags"), g.sym("wObtainedBadges"))
         val codeSize = compiler.compile(script)
         val src = ScriptCodec.encode(script).toByteArray(Charsets.UTF_8)
         val bank = g.world.engineBank
@@ -251,8 +255,110 @@ object ScriptEngine {
         remove(g, map, textId)
     }
 
-    /** Flags already used by triggers (so new triggers can pick a free one). */
-    fun usedTriggerFlags(g: PokeRed): Set<Int> = triggerEntries(g).filter { it.map != DEAD }.flatMap { e -> triggers(g, e.map).map { it.flag } }.toSet()
+    /** Flags already used by triggers and NPC visibility (so new ones can pick a free one). */
+    fun usedTriggerFlags(g: PokeRed): Set<Int> =
+        triggerEntries(g).filter { it.map != DEAD }.flatMap { e -> triggers(g, e.map).map { it.flag } }.toSet() +
+            visibility(g).map { it.flag }
+
+    /** A free flag for the engine's own bookkeeping, taken from the top of the range. */
+    fun freeEngineFlag(g: PokeRed): Int {
+        val used = usedTriggerFlags(g)
+        return (Flags.COUNT - 1 downTo 64).firstOrNull { it !in used } ?: throw EditException("Out of flags for triggers and NPC visibility")
+    }
+
+    // ---- NPC visibility -----------------------------------------------------------------------
+
+    /**
+     * An NPC that events can show and hide. [sprite] is its 1-based index on the map; it's
+     * hidden while [flag] is set (or, with [startHidden], while it's clear).
+     */
+    data class Visibility(val map: Int, val sprite: Int, val flag: Int, val startHidden: Boolean)
+
+    private const val VIS_PTR = 0x05FE // in the engine bank ($45FE)
+    private const val VIS_ENTRIES = 64
+    private const val VIS_SIZE = 7
+
+    private fun visTable(g: PokeRed): Int? {
+        if (!bankReady(g) || g.rom.u8(bankStart(g) + 6) < 6) return null
+        val ptr = g.rom.u16(bankStart(g) + VIS_PTR)
+        return if (ptr in 0x4C00 until 0x8000) Gb.offset(g.world.engineBank, ptr) else null
+    }
+
+    fun visibility(g: PokeRed): List<Visibility> {
+        val t = visTable(g) ?: return emptyList()
+        val wEventFlags = g.sym("wEventFlags")
+        return (0 until VIS_ENTRIES).asSequence().map { t + it * VIS_SIZE }.takeWhile { g.rom.u8(it) != 0xFF }.map { o ->
+            val event = (g.rom.u16(o + 2) - wEventFlags) * 8 + Integer.numberOfTrailingZeros(g.rom.u8(o + 4))
+            Visibility(g.rom.u8(o), g.rom.u8(o + 1), event - Flags.FIRST_EVENT, g.rom.u8(o + 5) != 0)
+        }.toList()
+    }
+
+    fun visibility(g: PokeRed, map: Int, sprite: Int): Visibility? = visibility(g).firstOrNull { it.map == map && it.sprite == sprite }
+
+    /** Lets events show and hide NPC [sprite] (1-based) on [map]; it starts hidden if [startHidden]. */
+    fun setVisibility(g: PokeRed, map: Int, sprite: Int, startHidden: Boolean) {
+        val current = visibility(g)
+        val existing = current.firstOrNull { it.map == map && it.sprite == sprite }
+        val list = current.filterNot { it === existing } + Visibility(map, sprite, existing?.flag ?: freeEngineFlag(g), startHidden)
+        writeVisibility(g, list)
+    }
+
+    fun removeVisibility(g: PokeRed, map: Int, sprite: Int) {
+        val current = visibility(g)
+        if (current.none { it.map == map && it.sprite == sprite }) return
+        writeVisibility(g, current.filterNot { it.map == map && it.sprite == sprite })
+    }
+
+    /** Keeps entries pointing at the right NPCs after NPC [sprite] on [map] is deleted. */
+    fun npcRemoved(g: PokeRed, map: Int, sprite: Int) {
+        val current = visibility(g)
+        if (current.none { it.map == map && it.sprite >= sprite }) return
+        writeVisibility(g, current.filterNot { it.map == map && it.sprite == sprite }
+            .map { if (it.map == map && it.sprite > sprite) it.copy(sprite = it.sprite - 1) else it })
+    }
+
+    private fun writeVisibility(g: PokeRed, list: List<Visibility>) {
+        if (list.size > VIS_ENTRIES) throw EditException("At most $VIS_ENTRIES NPCs can be shown and hidden by events")
+        val wEventFlags = g.sym("wEventFlags")
+        // The game's own toggleable objects use indexes below this; ours sit above, one per sprite slot.
+        val base = toggleableCount(g)
+        val bytes = ByteArray(VIS_ENTRIES * VIS_SIZE + 1) { 0xFF.toByte() }
+        list.forEachIndexed { i, v ->
+            val e = Flags.FIRST_EVENT + v.flag
+            val addr = wEventFlags + e / 8
+            byteArrayOf(v.map.toByte(), v.sprite.toByte(), addr.toByte(), (addr shr 8).toByte(), (1 shl (e % 8)).toByte(),
+                (if (v.startHidden) 1 else 0).toByte(), (base + v.sprite).toByte()).copyInto(bytes, i * VIS_SIZE)
+        }
+        g.rom.batch {
+            install(g)
+            val t = visTable(g) ?: g.world.allocEngine(bytes, "NPC visibility").also { at ->
+                g.rom.write16(bankStart(g) + VIS_PTR, Gb.ptr(at), "NPC visibility")
+            }
+            g.rom.write(t, bytes, "NPC visibility")
+            patchToggleLoader(g)
+        }
+    }
+
+    /** Number of the game's own toggleable objects (items, story NPCs). */
+    private fun toggleableCount(g: PokeRed): Int {
+        val t = g.sym("ToggleableObjectStates")
+        var n = 0
+        while (g.rom.u8(t + n * 3) != 0xFF) n++
+        require(n + 16 < 256) { "The game's toggleable objects leave no room" }
+        return n
+    }
+
+    /** Points the map loader's toggleable-object setup at NeedleLoadToggles ($400E). */
+    private fun patchToggleLoader(g: PokeRed) {
+        val target = g.sym("MarkTownVisitedAndLoadToggleableObjects")
+        val bs = g.sym("Bankswitch")
+        fun call(bank: Int, ptr: Int) = byteArrayOf(0x06, bank.toByte(), 0x21, ptr.toByte(), (ptr shr 8).toByte(), 0xCD.toByte(), bs.toByte(), (bs shr 8).toByte())
+        val mine = call(g.world.engineBank, 0x400E)
+        if (g.rom.indexOf(mine, 0, 0x4000) >= 0) return
+        val at = g.rom.indexOf(call(Gb.bankOf(target), Gb.ptr(target)), 0, 0x4000)
+        if (at < 0) throw EditException("This ROM's map loader has been modified, so NPCs can't be shown and hidden")
+        g.rom.write(at, mine, "Show and hide NPCs")
+    }
 
     // ---- Per-map script hook ------------------------------------------------------------------
 

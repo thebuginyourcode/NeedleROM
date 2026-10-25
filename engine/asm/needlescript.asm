@@ -25,6 +25,10 @@ DEF TRIGGERS     EQU $4600
 DEF wNeedleState EQU wUnusedMapVariable
 DEF wNeedlePtrLo EQU wUnusedPlayerDataByte
 DEF wNeedlePtrHi EQU wUnusedObtainedBadges
+; Pointer to the visibility table (written by the editor; 0 = none): 7-byte entries
+; (map, sprite index, dw flag address, flag mask, invert, toggle index), $FF-terminated.
+; The NPC is hidden when (flag set) xor invert.
+DEF VIS_PTR EQU $45FE
 DEF PAD_RIGHT EQU $10
 DEF PAD_LEFT  EQU $20
 DEF PAD_UP    EQU $40
@@ -56,14 +60,28 @@ DEF OP_WALK_TO_PLAYER EQU 17 ; db sprite index (1-based); pauses the event until
 DEF OP_CRY          EQU 18 ; db species (internal id)
 DEF OP_MUSIC        EQU 19 ; db music id, audio bank
 DEF OP_LEAD         EQU 20 ; db sprite index (1-based), x, y; the player follows; pauses the event
-DEF NUM_OPS         EQU 21
+DEF OP_HIDE         EQU 21 ; db sprite index
+DEF OP_SHOW         EQU 22 ; db sprite index
+DEF OP_FACE         EQU 23 ; db sprite index (0 = player), direction (0 down, 4 up, 8 left, 12 right)
+DEF OP_MOVE_NPC     EQU 24 ; db sprite index, NPC movement directions..., $FF; pauses the event
+DEF OP_MOVE_PLAYER  EQU 25 ; db joypad directions..., 0; pauses the event
+DEF OP_WAIT         EQU 26 ; db frames
+DEF OP_FADE_OUT     EQU 27
+DEF OP_FADE_IN      EQU 28
+DEF OP_WARP         EQU 29 ; db map, warp index (0-based); ends the event
+DEF OP_IF_LESS_MONEY EQU 30 ; 3 bytes BCD ; dw jump_if_less
+DEF OP_TAKE_MONEY   EQU 31 ; 3 bytes BCD (all of it if the player has less)
+DEF OP_IF_NO_MON    EQU 32 ; db species ; dw jump_if_not_in_party
+DEF OP_IF_RANDOM    EQU 33 ; db chance (0-255) ; dw jump_if_hit
+DEF NUM_OPS         EQU 34
 
 SECTION "NeedleHeader", ROMX[$4000], BANK[1]
-	db "NEEDLE", 5, 0
+	db "NEEDLE", 6, 0
 
 SECTION "NeedleRun", ROMX[$4008], BANK[1]
 	jp NeedleRun
 	jp NeedleMapScript
+	jp NeedleLoadToggles
 
 ; Entry: called via Bankswitch from the ROM0 hook while a text box is open.
 NeedleRun::
@@ -140,7 +158,8 @@ Handlers:
 	dw Op_End, Op_Text, Op_YesNo, Op_GiveItem, Op_GiveMon, Op_SetFlag, Op_ClearFlag
 	dw Op_IfFlag, Op_IfNotFlag, Op_Jump, Op_WildBattle, Op_Trainer, Op_Heal
 	dw Op_GiveMoney, Op_IfNoItem, Op_TakeItem, Op_Sound, Op_WalkToPlayer, Op_Cry, Op_Music
-	dw Op_Lead
+	dw Op_Lead, Op_Hide, Op_Show, Op_Face, Op_MoveNpc, Op_MovePlayer, Op_Wait, Op_FadeOut
+	dw Op_FadeIn, Op_Warp, Op_IfLessMoney, Op_TakeMoney, Op_IfNoMon, Op_IfRandom
 
 Op_End:
 	pop hl
@@ -595,9 +614,366 @@ Op_Lead:
 	pop hl
 	jp PauseEvent
 
+; ---- Showing and hiding NPCs ----------------------------------------------------------------
+
+; Called instead of the game's own toggleable-object setup when a map loads: adds this
+; map's event-controlled NPCs to the list, so they're right from the first frame.
+NeedleLoadToggles::
+	ld b, BANK_MarkTownVisitedAndLoadToggleableObjects
+	ld hl, MarkTownVisitedAndLoadToggleableObjects
+	call Bankswitch
+SyncVisibility:
+	ld hl, VIS_PTR
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	or h
+	ret z
+.entry
+	ld a, [hl]
+	cp $FF
+	ret z
+	ld b, a
+	ld a, [wCurMap]
+	cp b
+	jr nz, .next
+	push hl
+	call SyncEntry
+	pop hl
+.next
+	ld de, 7
+	add hl, de
+	jr .entry
+
+; hl = visibility entry. Lists its NPC as toggleable and sets its hidden bit.
+SyncEntry:
+	inc hl
+	ld a, [hli] ; sprite index
+	ld c, a
+	ld a, [hli]
+	ld e, a
+	ld a, [hli]
+	ld d, a     ; flag address
+	ld a, [de]
+	and [hl]
+	inc hl
+	jr z, .flagClear
+	ld a, 1
+.flagClear
+	xor [hl]    ; invert
+	inc hl
+	ld b, a     ; b = 1 if hidden
+	ld e, [hl]  ; toggle index to use if the NPC isn't listed yet
+	push bc
+	ld hl, wToggleableObjectList
+.find
+	ld a, [hli]
+	cp $FF
+	jr z, .append
+	cp c
+	jr z, .found
+	inc hl
+	jr .find
+.append
+	dec hl
+	ld a, c
+	ld [hli], a
+	ld a, e
+	ld [hli], a
+	ld [hl], $FF
+	jr .haveIndex
+.found
+	ld a, [hl]
+.haveIndex
+	pop bc
+	ld d, a
+	and 7
+	inc a
+	ld e, a
+	ld a, $80
+.shift
+	rlca
+	dec e
+	jr nz, .shift
+	ld e, a     ; bit mask
+	ld a, d
+	srl a
+	srl a
+	srl a
+	ld hl, wToggleableObjectFlags
+	add l
+	ld l, a
+	jr nc, .noCarry
+	inc h
+.noCarry
+	ld a, b
+	and a
+	ld a, e
+	jr z, .show
+	or [hl]
+	ld [hl], a
+	ret
+.show
+	cpl
+	and [hl]
+	ld [hl], a
+	ret
+
+Op_Hide:
+	ld b, 1
+	jr ShowHide
+Op_Show:
+	ld b, 0
+ShowHide:
+	pop hl
+	ld a, [hli]
+	push hl
+	ld c, a
+	ld hl, VIS_PTR
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	or h
+	jr z, .done
+.find
+	ld a, [hl]
+	cp $FF
+	jr z, .done
+	ld d, a
+	ld a, [wCurMap]
+	cp d
+	jr nz, .next
+	inc hl
+	ld a, [hld]
+	cp c
+	jr z, .found
+.next
+	ld de, 7
+	add hl, de
+	jr .find
+.found
+	push hl
+	inc hl
+	inc hl
+	ld a, [hli]
+	ld e, a
+	ld a, [hli]
+	ld d, a     ; flag address
+	ld a, [hli]
+	ld c, a     ; mask
+	ld a, b
+	xor [hl]    ; the flag value that gives this visibility
+	ld a, [de]
+	jr z, .clearFlag
+	or c
+	jr .setFlag
+.clearFlag
+	ld b, a
+	ld a, c
+	cpl
+	and b
+.setFlag
+	ld [de], a
+	pop hl
+	call SyncEntry
+	call UpdateSprites
+.done
+	pop hl
+	jp RunScript
+
+; ---- More steps -----------------------------------------------------------------------------
+
+Op_Face:
+	pop hl
+	ld a, [hli]
+	ld b, a
+	ld a, [hli]
+	ld c, a
+	push hl
+	ld a, b
+	and a
+	jr nz, .npc
+	ld a, c
+	ld [wSpritePlayerStateData1FacingDirection], a
+	jr .done
+.npc
+	ldh [hSpriteIndex], a
+	ld a, c
+	ldh [hSpriteFacingDirection], a
+	call SetSpriteFacingDirectionAndDelay
+.done
+	pop hl
+	jp RunScript
+
+Op_MoveNpc:
+	ldh a, [hTextID]
+	ld c, a
+	pop hl
+	call SelectNPC
+	push bc
+	ld d, h
+	ld e, l
+.skip
+	ld a, [hli]
+	cp $FF
+	jr nz, .skip
+	push hl
+	call MoveSprite ; copies the path at de
+	pop hl
+	pop bc
+	jp PauseEvent
+
+Op_MovePlayer:
+	ldh a, [hTextID]
+	ld c, a
+	pop hl
+	push bc
+	ld d, h
+	ld e, l
+	ld b, 0
+.count
+	ld a, [hli]
+	and a
+	jr z, .counted
+	inc b
+	jr .count
+.counted
+	push hl
+	ld a, b
+	and a
+	jr z, .none
+	ld [wSimulatedJoypadStatesIndex], a
+	ld hl, wSimulatedJoypadStatesEnd - 1
+	add l
+	ld l, a
+	jr nc, .copy
+	inc h
+.copy
+	ld a, [de]
+	inc de
+	ld [hld], a
+	dec b
+	jr nz, .copy
+	call StartSimulatingJoypadStates
+.none
+	pop hl
+	pop bc
+	jp PauseEvent
+
+Op_Wait:
+	pop hl
+	ld a, [hli]
+	ld c, a
+	push hl
+	call DelayFrames
+	pop hl
+	jp RunScript
+
+Op_FadeOut:
+	call GBFadeOutToBlack
+	pop hl
+	jp RunScript
+
+Op_FadeIn:
+	call GBFadeInFromBlack
+	pop hl
+	jp RunScript
+
+; Ends the event; NeedleMapScript then starts the warp from the map's script, the way
+; the game's own scripts do (hWarpDestinationMap doesn't survive the text box closing).
+Op_Warp:
+	pop hl
+	ld a, [hli]
+	ld [wNeedlePtrLo], a
+	ld a, [hli]
+	ld [wNeedlePtrHi], a
+	ld a, $20
+	ld [wNeedleState], a
+	ret
+
+; hl -> 3 BCD bytes: copies them to hMoney, hl past them.
+ReadMoney:
+	ld a, [hli]
+	ldh [hMoney], a
+	ld a, [hli]
+	ldh [hMoney + 1], a
+	ld a, [hli]
+	ldh [hMoney + 2], a
+	ret
+
+Op_IfLessMoney:
+	pop hl
+	call ReadMoney
+	push hl
+	call HasEnoughMoney
+	pop hl
+	jp c, TakeJump
+	jp SkipJump
+
+Op_TakeMoney:
+	pop hl
+	call ReadMoney
+	push hl
+	call HasEnoughMoney
+	jr nc, .enough
+	xor a
+	ld hl, wPlayerMoney
+	ld [hli], a
+	ld [hli], a
+	ld [hl], a
+	jr .done
+.enough
+	call SubtractAmountPaidFromMoney
+.done
+	pop hl
+	jp RunScript
+
+Op_IfNoMon:
+	pop hl
+	ld a, [hli]
+	ld b, a
+	push hl
+	ld hl, wPartySpecies
+.loop
+	ld a, [hli]
+	cp $FF
+	jr z, .missing
+	cp b
+	jr nz, .loop
+	pop hl
+	jp SkipJump
+.missing
+	pop hl
+	jp TakeJump
+
+Op_IfRandom:
+	pop hl
+	ld a, [hli]
+	ld b, a
+	push hl
+	call Random
+	pop hl
+	cp b
+	jp c, TakeJump
+	jp SkipJump
+
 ; Called every frame from a map's script hook (before the map's own script).
 NeedleMapScript::
 	ld a, [wNeedleState]
+	bit 5, a
+	jr z, .noWarp
+	xor a
+	ld [wNeedleState], a
+	ld a, [wNeedlePtrLo]
+	ldh [hWarpDestinationMap], a
+	ld a, [wNeedlePtrHi]
+	ld [wDestinationWarpID], a
+	ld a, [wCurMap]
+	ld [wLastMap], a
+	ld hl, wStatusFlags3
+	set 3, [hl] ; BIT_WARP_FROM_CUR_SCRIPT
+	ret
+.noWarp
 	bit 6, a
 	jp z, .triggers
 ; Waiting for an NPC (and the player following it) to finish walking.
@@ -682,3 +1058,4 @@ NeedleMapScript::
 	jp .loop
 
 NeedleRunEnd::
+	ASSERT NeedleRunEnd <= VIS_PTR, "engine code overlaps the visibility pointer"
