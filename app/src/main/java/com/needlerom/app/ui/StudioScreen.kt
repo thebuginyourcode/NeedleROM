@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -96,6 +97,9 @@ fun StudioScreen(state: AppState, files: Files) {
     val gfx = remember(game) { GfxCache(game.world) }
     var renaming by remember { mutableStateOf(false) }
     var creatingMap by remember { mutableStateOf(false) }
+    // Rotating switches layouts; the open document moves between them instead of being
+    // rebuilt, so unsaved edits and a running playtest survive.
+    val docView = remember(gfx) { movableContentOf { DocView(state, gfx) } }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLowest).statusBarsPadding().navigationBarsPadding()) {
         val wide = maxWidth >= 840.dp
@@ -111,7 +115,7 @@ fun StudioScreen(state: AppState, files: Files) {
                     VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Column(Modifier.weight(1f)) {
                         DocTabs(state)
-                        Box(Modifier.weight(1f)) { DocView(state, gfx) }
+                        Box(Modifier.weight(1f)) { docView() }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Dock(bottomPanes(state), Modifier.fillMaxWidth().height(180.dp)) { PaneContent(it, state, game, gfx) { creatingMap = true } }
                     }
@@ -121,7 +125,7 @@ fun StudioScreen(state: AppState, files: Files) {
                 sideDock -> Row(Modifier.weight(1f)) {
                     Column(Modifier.weight(1f)) {
                         DocTabs(state)
-                        Box(Modifier.weight(1f)) { DocView(state, gfx) }
+                        Box(Modifier.weight(1f)) { docView() }
                     }
                     VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Dock(compactPanes(state), Modifier.width(320.dp).fillMaxHeight()) { PaneContent(it, state, game, gfx) { creatingMap = true } }
@@ -129,7 +133,7 @@ fun StudioScreen(state: AppState, files: Files) {
                 else -> {
                     var open by rememberSaveable { mutableStateOf(true) }
                     DocTabs(state)
-                    Box(Modifier.weight(1f)) { DocView(state, gfx) }
+                    Box(Modifier.weight(1f)) { docView() }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Dock(compactPanes(state), Modifier.fillMaxWidth().then(if (open) Modifier.height(dockHeight) else Modifier),
                         collapsed = !open, onToggle = { open = !open }) { PaneContent(it, state, game, gfx) { creatingMap = true } }
