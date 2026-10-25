@@ -19,7 +19,7 @@ object ScriptEngine {
     private const val TABLE_ENTRIES = 255
     private const val TRIGGERS = 0x0600 // $4600
     private const val TRIGGER_ENTRIES = 63
-    private const val FORMAT = 4
+    private const val FORMAT = 5
     private const val TRIGGER_FORMAT = 2 // first format with the trigger table
     private val MAGIC = "NEEDLE".toByteArray()
 

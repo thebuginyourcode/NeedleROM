@@ -25,6 +25,14 @@ DEF TRIGGERS     EQU $4600
 DEF wNeedleState EQU wUnusedMapVariable
 DEF wNeedlePtrLo EQU wUnusedPlayerDataByte
 DEF wNeedlePtrHi EQU wUnusedObtainedBadges
+DEF PAD_RIGHT EQU $10
+DEF PAD_LEFT  EQU $20
+DEF PAD_UP    EQU $40
+DEF PAD_DOWN  EQU $80
+DEF NPC_MOVEMENT_DOWN  EQU $00
+DEF NPC_MOVEMENT_UP    EQU $40
+DEF NPC_MOVEMENT_LEFT  EQU $80
+DEF NPC_MOVEMENT_RIGHT EQU $C0
 
 ; Opcodes (keep in sync with ScriptCompiler.kt)
 DEF OP_END          EQU 0
@@ -47,10 +55,11 @@ DEF OP_SOUND        EQU 16 ; db sound id
 DEF OP_WALK_TO_PLAYER EQU 17 ; db sprite index (1-based); pauses the event until the walk ends
 DEF OP_CRY          EQU 18 ; db species (internal id)
 DEF OP_MUSIC        EQU 19 ; db music id, audio bank
-DEF NUM_OPS         EQU 20
+DEF OP_LEAD         EQU 20 ; db sprite index (1-based), x, y; the player follows; pauses the event
+DEF NUM_OPS         EQU 21
 
 SECTION "NeedleHeader", ROMX[$4000], BANK[1]
-	db "NEEDLE", 4, 0
+	db "NEEDLE", 5, 0
 
 SECTION "NeedleRun", ROMX[$4008], BANK[1]
 	jp NeedleRun
@@ -131,6 +140,7 @@ Handlers:
 	dw Op_End, Op_Text, Op_YesNo, Op_GiveItem, Op_GiveMon, Op_SetFlag, Op_ClearFlag
 	dw Op_IfFlag, Op_IfNotFlag, Op_Jump, Op_WildBattle, Op_Trainer, Op_Heal
 	dw Op_GiveMoney, Op_IfNoItem, Op_TakeItem, Op_Sound, Op_WalkToPlayer, Op_Cry, Op_Music
+	dw Op_Lead
 
 Op_End:
 	pop hl
@@ -346,21 +356,85 @@ Op_Music:
 	pop hl
 	jp RunScript
 
-Op_WalkToPlayer:
-	ldh a, [hTextID] ; the trigger's text id, needed to resume
-	ld c, a
-	pop hl
-	ld a, [hli]      ; sprite index
-	push hl
-	push bc
+; Sets the pathfinding distances and directions from the NPC at [hNPCSpriteOffset]
+; to the map tile (c, b) = (x, y), from map coordinates (so it works off screen too).
+SetPathTarget:
+	ld h, HIGH(wSpriteStateData2)
+	ldh a, [hNPCSpriteOffset]
+	add 4
+	ld l, a
+	ld e, 0
+	ld a, [hli] ; map Y + 4
+	sub 4
+	ld d, a
+	ld a, b
+	sub d
+	jr nc, .yDone
+	cpl
+	inc a
+	set 0, e ; target is above: walk up
+.yDone
+	ldh [hNPCPlayerYDistance], a
+	ld a, [hl] ; map X + 4
+	sub 4
+	ld d, a
+	ld a, c
+	sub d
+	jr nc, .xDone
+	cpl
+	inc a
+	set 1, e ; target is to the left: walk left
+.xDone
+	ldh [hNPCPlayerXDistance], a
+	ld a, e
+	ldh [hNPCPlayerRelativePosFlags], a
+	ret
+
+; Reads the sprite index at hl and selects that NPC. Returns hl past it.
+SelectNPC:
+	ld a, [hli]
 	ldh [hSpriteIndex], a
 	swap a
 	ldh [hNPCSpriteOffset], a
-	ld a, 1 ; distances from the NPC's point of view (as Oak's walk in Pallet Town does)
-	ldh [hNPCPlayerRelativePosPerspective], a
-	ld b, BANK_CalcPositionOfPlayerRelativeToNPC
-	ld hl, CalcPositionOfPlayerRelativeToNPC
+	ret
+
+; Finds the path set up by SetPathTarget and starts the NPC walking it.
+WalkPath:
+	ld b, BANK_FindPathToPlayer
+	ld hl, FindPathToPlayer
 	call Bankswitch
+	ld de, wNPCMovementDirections2
+	jp MoveSprite
+
+; Ends the current event until the walking is done; NeedleMapScript then resumes it at
+; hl. c = the event's text id.
+PauseEvent:
+	ld a, $FF ; freeze the player's controls
+	ld [wJoyIgnore], a
+	ld a, 1   ; close this text box without waiting for a button
+	ld [wDoNotWaitForButtonPressAfterDisplayingText], a
+	ld a, l
+	ld [wNeedlePtrLo], a
+	ld a, h
+	ld [wNeedlePtrHi], a
+	ld a, c
+	and $3F
+	or $40
+	ld [wNeedleState], a
+	ret
+
+Op_WalkToPlayer:
+	ldh a, [hTextID] ; the event's text id, needed to resume
+	ld c, a
+	pop hl
+	call SelectNPC
+	push hl
+	push bc
+	ld a, [wYCoord]
+	ld b, a
+	ld a, [wXCoord]
+	ld c, a
+	call SetPathTarget
 ; Stop next to the player: shorten the longer axis by one step.
 	ldh a, [hNPCPlayerYDistance]
 	ld b, a
@@ -377,35 +451,158 @@ Op_WalkToPlayer:
 	dec a
 	ldh [hNPCPlayerYDistance], a
 .path
-	ld b, BANK_FindPathToPlayer
-	ld hl, FindPathToPlayer
-	call Bankswitch
-	ld de, wNPCMovementDirections2
-	call MoveSprite
-	ld a, $FF ; freeze the player while the NPC walks
-	ld [wJoyIgnore], a
-	ld a, 1   ; close this text box without waiting for a button
-	ld [wDoNotWaitForButtonPressAfterDisplayingText], a
+	call WalkPath
 	pop bc
 	pop hl
-	ld a, l
-	ld [wNeedlePtrLo], a
-	ld a, h
-	ld [wNeedlePtrHi], a
+	jp PauseEvent
+
+; The NPC walks to (x, y) and the player follows one step behind.
+Op_Lead:
+	ldh a, [hTextID]
+	ld c, a
+	pop hl
+	call SelectNPC
+	ld a, [hli] ; x
+	ld e, a
+	ld a, [hli] ; y
+	ld d, a
+	push hl
+	push bc
+	push de
+; The player first walks to where the NPC starts.
+	ld h, HIGH(wSpriteStateData2)
+	ldh a, [hNPCSpriteOffset]
+	add 4
+	ld l, a
+	ld a, [hli]
+	sub 4
+	ld [wNeedlePtrLo], a ; NPC start Y (wNeedlePtr is free until PauseEvent)
+	ld a, [hl]
+	sub 4
+	ld [wNeedlePtrHi], a ; NPC start X
+	pop de
+	ld b, d
+	ld c, e
+	call SetPathTarget
+	call WalkPath
+; The player's steps go in wSimulatedJoypadStatesEnd, which the game plays from the
+; end, so they're written backwards from the last slot. First count them: the walk to
+; where the NPC started, then the NPC's path except its last step.
+	ld hl, wNPCMovementDirections2
+	ld b, 0
+.count
+	ld a, [hli]
+	cp $FF
+	jr z, .counted
+	inc b
+	jr .count
+.counted
+	ld a, b
+	and a
+	jp z, .noSteps ; the NPC is already there
+	dec a
+	ld b, a
+	ld a, [wNeedlePtrHi] ; start X
+	ld c, a
+	ld a, [wXCoord]
+	sub c
+	jr nc, .absX
+	cpl
+	inc a
+.absX
+	add b
+	ld b, a
+	ld a, [wNeedlePtrLo] ; start Y
+	ld c, a
+	ld a, [wYCoord]
+	sub c
+	jr nc, .absY
+	cpl
+	inc a
+.absY
+	add b
+	jp z, .noSteps
+	ld [wSimulatedJoypadStatesIndex], a
+	ld hl, wSimulatedJoypadStatesEnd - 1
+	add l
+	ld l, a
+	jr nc, .xSteps
+	inc h
+.xSteps
+	ld a, [wNeedlePtrHi]
+	ld b, a
+	ld a, [wXCoord]
+	ld c, PAD_LEFT
+	sub b
+	jr z, .ySteps
+	jr nc, .xCount ; the player is right of the start
+	ld c, PAD_RIGHT
+	cpl
+	inc a
+.xCount
+	ld b, a
+.xStep
 	ld a, c
-	and $3F
-	or $40
-	ld [wNeedleState], a
-	ret
+	ld [hld], a
+	dec b
+	jr nz, .xStep
+.ySteps
+	ld a, [wNeedlePtrLo]
+	ld b, a
+	ld a, [wYCoord]
+	ld c, PAD_UP
+	sub b
+	jr z, .follow
+	jr nc, .yCount ; the player is below the start
+	ld c, PAD_DOWN
+	cpl
+	inc a
+.yCount
+	ld b, a
+.yStep
+	ld a, c
+	ld [hld], a
+	dec b
+	jr nz, .yStep
+.follow
+	ld de, wNPCMovementDirections2
+.copy
+	ld a, [de]
+	inc de
+	ld b, a
+	ld a, [de]
+	cp $FF
+	jr z, .started ; leave out the NPC's last step
+	ld a, b
+	ld c, PAD_DOWN
+	cp NPC_MOVEMENT_DOWN
+	jr z, .put
+	ld c, PAD_UP
+	cp NPC_MOVEMENT_UP
+	jr z, .put
+	ld c, PAD_LEFT
+	cp NPC_MOVEMENT_LEFT
+	jr z, .put
+	ld c, PAD_RIGHT
+.put
+	ld a, c
+	ld [hld], a
+	jr .copy
+.started
+	call StartSimulatingJoypadStates
+.noSteps
+	pop bc
+	pop hl
+	jp PauseEvent
 
 ; Called every frame from a map's script hook (before the map's own script).
 NeedleMapScript::
 	ld a, [wNeedleState]
 	bit 6, a
 	jp z, .triggers
-; Waiting for an NPC to finish walking.
+; Waiting for an NPC (and the player following it) to finish walking.
 	ld a, [wStatusFlags5]
-	bit 0, a ; BIT_SCRIPTED_NPC_MOVEMENT
+	and (1 << 0) | (1 << 7) ; BIT_SCRIPTED_NPC_MOVEMENT, BIT_SCRIPTED_MOVEMENT_STATE
 	ret nz
 	ld a, [wNeedleState]
 	and $3F

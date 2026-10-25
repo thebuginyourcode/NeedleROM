@@ -45,9 +45,12 @@ sealed interface Step {
 
     /**
      * An NPC on this map walks up to the player (stopping next to them). The event pauses
-     * while they walk. Only for trigger events, where the player is standing still.
+     * while they walk.
      */
     data class WalkToPlayer(val npc: Int) : Step
+
+    /** NPC [npc] walks to tile ([x], [y]) and the player follows one step behind. */
+    data class Lead(val npc: Int, val x: Int, val y: Int) : Step
 
     data object Heal : Step
 
@@ -62,7 +65,22 @@ sealed interface Step {
     data class PlayMusic(val music: Int, val bank: Int) : Step
 }
 
-data class EventScript(val steps: List<Step>)
+data class EventScript(val steps: List<Step>) {
+    /** True if any step makes someone walk (the event then pauses and resumes). */
+    fun walks(): Boolean = walks(steps)
+
+    private fun walks(list: List<Step>): Boolean = list.any { s ->
+        when (s) {
+            is Step.WalkToPlayer, is Step.Lead -> true
+            is Step.Ask -> walks(s.yes) || walks(s.no)
+            is Step.IfFlag -> walks(s.then) || walks(s.otherwise)
+            is Step.IfHasItem -> walks(s.then) || walks(s.otherwise)
+            is Step.GiveItem -> walks(s.ifBagFull)
+            is Step.GivePokemon -> walks(s.ifNoRoom)
+            else -> false
+        }
+    }
+}
 
 /** Script flags live in event flags the original game never uses ($920-$99F). */
 object Flags {
@@ -158,6 +176,7 @@ object ScriptCodec {
                 s.customTeam?.let { t -> sb.append(" team"); t.forEach { sb.append(" ${it.level} ${it.species}") } }
             }
             is Step.WalkToPlayer -> sb.append("walk ${s.npc}")
+            is Step.Lead -> sb.append("lead ${s.npc} ${s.x} ${s.y}")
             Step.Heal -> sb.append("heal")
             is Step.GiveMoney -> sb.append("money ${s.amount}")
             is Step.PlaySound -> sb.append("sound ${s.sound}")
@@ -213,6 +232,7 @@ object ScriptCodec {
                         } else t
                     }
                     "walk" -> Step.WalkToPlayer(int())
+                    "lead" -> Step.Lead(int(), int(), int())
                     "heal" -> Step.Heal
                     "money" -> Step.GiveMoney(int())
                     "sound" -> Step.PlaySound(int())

@@ -588,6 +588,8 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
 
     /** Makes [textId] run [script] (installing the script engine if needed). */
     fun setScript(textId: Int, script: EventScript) = rom.batch {
+        // Walking steps pause the event; the map's per-frame hook resumes it.
+        if (script.walks()) { ScriptEngine.install(g); installMapHook() }
         ScriptEngine.put(g, id, textId, script)
         if (behavior(textId) != Behavior.Script) setBehavior(textId, Behavior.Script)
     }

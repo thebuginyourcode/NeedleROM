@@ -26,6 +26,8 @@ NEEDED = [
     "hSpriteIndex", "hNPCSpriteOffset", "hNPCPlayerRelativePosPerspective", "hNPCPlayerYDistance", "hNPCPlayerXDistance",
     "wDoNotWaitForButtonPressAfterDisplayingText", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer",
     "wUnusedMapVariable", "wUnusedPlayerDataByte", "wUnusedObtainedBadges", "PlayCry", "PlayMusic", "wLastMusicSoundID",
+    "wSpriteStateData2", "hNPCPlayerRelativePosFlags", "wSimulatedJoypadStatesEnd",
+    "wSimulatedJoypadStatesIndex", "StartSimulatingJoypadStates",
 ]
 FAR = ["HealParty", "RemoveItemByID", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer"]
 
