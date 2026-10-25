@@ -21,6 +21,8 @@ SYMBOLS = [
     "TrainerDataPointers", "TrainerNames", "WildDataPointers", "EvosMovesPointerTable",
     "MoveNames", "Moves", "PokedexOrder", "TypeNames", "Overworld_Coll", "MapSongBanks", "NewGameWarp",
     "ToggleableObjectStates", "MarkTownVisitedAndLoadToggleableObjects", "wObtainedBadges",
+    "OakSpeech", "OakSpeechText1", "OakSpeechText2", "IntroducePlayerText", "IntroduceRivalText", "OakSpeechText3",
+    "TrainerPicAndMoneyPointers", "wCurSpecies",
     # home routines used by the script engine
     "TextScriptEnd", "Bankswitch", "PrintText", "GiveItem", "GivePokemon", "YesNoChoice",
     "IsItemInBag", "Predef", "PlaySound", "PlayCry", "GetCryData", "PlayMusic", "WaitForSoundToFinish", "DelayFrames",

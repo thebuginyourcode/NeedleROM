@@ -189,6 +189,7 @@ private fun Toolbar(state: AppState, files: Files, labels: Boolean, onRename: ()
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("New map…") }, onClick = { menu = false; onNewMap() })
+                DropdownMenuItem(text = { Text("Edit intro (Oak's speech)…") }, onClick = { menu = false; state.go(Route.Intro) })
                 HorizontalDivider()
                 ExportKind.entries.forEach { k -> DropdownMenuItem(text = { Text("Export ${k.label}…") }, onClick = { menu = false; files.export(k) }) }
                 HorizontalDivider()
@@ -231,6 +232,7 @@ private fun docLabel(state: AppState, d: Route): String {
         is Route.MapEditor -> state.mapName(d.mapId)
         is Route.ScriptEditor -> "Event: " + d.title
         is Route.GameScript -> "Game script: " + d.title
+        Route.Intro -> "Intro"
         is Route.PokemonEditor -> g?.monName(g.internalOfDex(d.dex)) ?: "Pokémon"
         is Route.TrainerEditor -> "Trainer: " + (g?.trainerClassNames?.getOrNull(d.trainerClass) ?: "?")
         is Route.WildEditor -> "Wild: " + state.mapName(d.mapId)
@@ -263,6 +265,7 @@ private fun DocView(state: AppState, gfx: GfxCache) {
                     when (d) {
                         is Route.ScriptEditor -> ScriptEditorScreen(state, d)
                         is Route.GameScript -> com.needlerom.app.ui.script.GameScriptScreen(state, d)
+                        Route.Intro -> com.needlerom.app.ui.data.IntroScreen(state)
                         is Route.PokemonEditor -> PokemonEditorScreen(state, d.dex)
                         is Route.TrainerEditor -> TrainerEditorScreen(state, d.trainerClass)
                         is Route.WildEditor -> WildEditorScreen(state, d.mapId)

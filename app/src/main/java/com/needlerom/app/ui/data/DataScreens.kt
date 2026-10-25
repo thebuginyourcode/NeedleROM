@@ -56,6 +56,7 @@ fun DataTab(state: AppState, game: PokeRed) {
     var section by remember { mutableStateOf(DataSection.POKEMON) }
     val rev = state.revision
     Column(Modifier.fillMaxSize()) {
+        TextButton(onClick = { state.go(Route.Intro) }, modifier = Modifier.padding(horizontal = 4.dp)) { Text("Intro: Oak's speech, pictures & names →") }
         Row(Modifier.padding(horizontal = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             DataSection.entries.take(3).forEach { s -> FilterChip(selected = s == section, onClick = { section = s }, label = { Text(s.label) }) }
         }

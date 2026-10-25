@@ -61,6 +61,10 @@ object GameScripts {
         return Reader(g, map.bank).run { Outline(read(Gb.ptr(at) + 1)) }
     }
 
+    /** The editable lines of the text structure at file offset [at] (following far jumps). */
+    fun textLines(g: PokeRed, at: Int): List<GameLine> =
+        Reader(g, Gb.bankOf(at)).textsAt(at).filterIsInstance<Block.Say>().map { it.line }
+
     // ---- Reading machine code -----------------------------------------------------------------
 
     private class Reader(val g: PokeRed, val bank: Int) {
@@ -225,6 +229,8 @@ object GameScripts {
             "DelayFrames", "DelayFrame", "Delay3" -> "waits"
             else -> "runs $name"
         }
+
+        fun textsAt(offset: Int): List<Block> = commands(offset, 0)
 
         /** The blocks shown by PrintText for the text structure at [addr]. */
         private fun texts(addr: Int): List<Block> = commands(if (addr < 0x4000) addr else off(addr), 0)
