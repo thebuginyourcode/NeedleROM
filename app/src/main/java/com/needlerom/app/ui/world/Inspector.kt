@@ -139,11 +139,15 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Trigger", fontWeight = FontWeight.Bold)
-                        Hint(if (t.x == null) "Runs when the player enters this map" else "(${t.x}, ${t.y}) · runs when the player steps here · drag to move")
+                        Hint(if (t.x == null) "Runs when the player enters this map" else "(${t.x}, ${t.y}) · ${t.width}×${t.height} tiles · runs when the player steps in it · drag to move")
                     }
                     TextButton(onClick = { st.selection = null }) { Text("Done") }
                 }
                 Hint("Runs once per game (remembered with flag ${t.flag}).")
+                if (t.x != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NumberField("Width", t.width, Modifier.weight(1f), 1..16) { w -> state.edit { map.resizeTrigger(t, w, t.height) } }
+                    NumberField("Height", t.height, Modifier.weight(1f), 1..16) { h -> state.edit { map.resizeTrigger(t, t.width, h) } }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { state.go(Route.ScriptEditor(map.id, t.textId, "${map.info.name} · trigger")) }) { Text("Edit event") }
                     OutlinedButton(onClick = {

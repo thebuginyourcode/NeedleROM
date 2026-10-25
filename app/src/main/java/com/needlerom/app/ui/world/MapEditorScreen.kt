@@ -308,8 +308,9 @@ private fun DrawScope.drawEvents(map: GameMap, st: EditorState, gfx: GfxCache, s
         val ty = t.y ?: return@forEach
         val selected = st.selection == Selection.Trigger(t.textId)
         val (x, y) = if (selected && drag != null) drag else tx to ty
-        drawRect(Color(0x66FF8C1A), at(x, y), Size(s, s))
-        drawRect(if (selected) sel else Color(0xFFFF8C1A), at(x, y), Size(s, s), style = stroke)
+        val area = Size(s * t.width, s * t.height)
+        drawRect(Color(0x66FF8C1A), at(x, y), area)
+        drawRect(if (selected) sel else Color(0xFFFF8C1A), at(x, y), area, style = stroke)
     }
     map.signs.forEach { g ->
         val selected = st.selection == Selection.SignPost(g.index)

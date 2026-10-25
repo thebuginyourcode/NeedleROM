@@ -19,7 +19,8 @@ object ScriptEngine {
     private const val TABLE_ENTRIES = 255
     private const val TRIGGERS = 0x0600 // $4600
     private const val TRIGGER_ENTRIES = 63
-    private const val FORMAT = 2
+    private const val FORMAT = 3
+    private const val TRIGGER_FORMAT = 2 // first format with the trigger table
     private val MAGIC = "NEEDLE".toByteArray()
 
     /** Home routines the interpreter calls; all must be unmodified for scripts to be offered. */
@@ -51,9 +52,10 @@ object ScriptEngine {
         if (ready && g.rom.u8(s + 6) >= FORMAT) return
         val code = ScriptBlobs.CODE.getValue(versionKey(g)).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         // Anything already allocated must be past the reserved area ($4000-$4BFF).
+        val keepTriggers = ready && g.rom.u8(s + 6) >= TRIGGER_FORMAT
         g.rom.batch {
             g.rom.write(s, code, "Install event script engine")
-            g.rom.write(s + TRIGGERS, ByteArray(TRIGGER_ENTRIES * 8 + 8) { 0xFF.toByte() }, "Install event script engine")
+            if (!keepTriggers) g.rom.write(s + TRIGGERS, ByteArray(TRIGGER_ENTRIES * 8 + 8) { 0xFF.toByte() }, "Install event script engine")
             if (!ready) g.rom.write(s + TABLE, ByteArray(TABLE_ENTRIES * 4 + 4) { 0xFF.toByte() }, "Install event script engine")
         }
     }
@@ -189,15 +191,18 @@ object ScriptEngine {
 
     // ---- Triggers -----------------------------------------------------------------------------
 
-    /** A tile (or a whole map, when x/y are null) that starts an event when the player steps on it. */
-    data class Trigger(val map: Int, val x: Int?, val y: Int?, val textId: Int, val flag: Int)
+    /**
+     * A rectangle of [width]×[height] tiles at (x, y) (or the whole map, when x/y are null)
+     * that starts an event when the player steps in it.
+     */
+    data class Trigger(val map: Int, val x: Int?, val y: Int?, val textId: Int, val flag: Int, val width: Int = 1, val height: Int = 1)
 
     private data class TriggerEntry(val slot: Int, val map: Int, val textId: Int)
 
     private fun triggerOffset(g: PokeRed) = bankStart(g) + TRIGGERS
 
     private fun triggerEntries(g: PokeRed): List<TriggerEntry> {
-        if (!bankReady(g) || g.rom.u8(bankStart(g) + 6) < FORMAT) return emptyList()
+        if (!bankReady(g) || g.rom.u8(bankStart(g) + 6) < TRIGGER_FORMAT) return emptyList()
         val out = mutableListOf<TriggerEntry>()
         for (i in 0 until TRIGGER_ENTRIES) {
             val o = triggerOffset(g) + i * 8
@@ -213,7 +218,8 @@ object ScriptEngine {
         val x = g.rom.u8(o + 1); val y = g.rom.u8(o + 2)
         val addr = g.rom.u16(o + 4); val mask = g.rom.u8(o + 6)
         val event = (addr - g.sym("wEventFlags")) * 8 + Integer.numberOfTrailingZeros(mask)
-        Trigger(map, x.takeIf { it != 0xFF }, y.takeIf { it != 0xFF }, e.textId, event - Flags.FIRST_EVENT)
+        val size = g.rom.u8(o + 7)
+        Trigger(map, x.takeIf { it != 0xFF }, y.takeIf { it != 0xFF }, e.textId, event - Flags.FIRST_EVENT, (size shr 4) + 1, (size and 15) + 1)
     }
 
     /** All maps that have at least one trigger. */
@@ -222,11 +228,12 @@ object ScriptEngine {
     /** Adds or updates the trigger for [t]'s map and text id. */
     fun putTrigger(g: PokeRed, t: Trigger) {
         require(t.flag in 0 until Flags.COUNT)
+        require(t.width in 1..16 && t.height in 1..16) { "Triggers can be at most 16×16 tiles" }
         ensureBank(g)
         val e = Flags.FIRST_EVENT + t.flag
         val addr = g.sym("wEventFlags") + e / 8
         val bytes = byteArrayOf(t.map.toByte(), (t.x ?: 0xFF).toByte(), (t.y ?: 0xFF).toByte(), t.textId.toByte(),
-            addr.toByte(), (addr shr 8).toByte(), (1 shl (e % 8)).toByte(), 0)
+            addr.toByte(), (addr shr 8).toByte(), (1 shl (e % 8)).toByte(), (((t.width - 1) shl 4) or (t.height - 1)).toByte())
         val list = triggerEntries(g)
         val slot = list.firstOrNull { it.map == t.map && it.textId == t.textId }?.slot
             ?: list.firstOrNull { it.map == DEAD }?.slot ?: list.size

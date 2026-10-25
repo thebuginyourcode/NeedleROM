@@ -408,7 +408,10 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
     /** Tiles (or the whole map) that start an event when the player steps there. */
     val triggers: List<ScriptEngine.Trigger> = ScriptEngine.triggers(g, id)
 
-    fun triggerAt(x: Int, y: Int) = triggers.lastOrNull { it.x == x && it.y == y }
+    fun triggerAt(x: Int, y: Int) = triggers.lastOrNull { t ->
+        val tx = t.x ?: return@lastOrNull false; val ty = t.y ?: return@lastOrNull false
+        x in tx until tx + t.width && y in ty until ty + t.height
+    }
 
     private val scriptPtrField = h + 7
 
@@ -451,6 +454,13 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
     fun moveTrigger(t: ScriptEngine.Trigger, x: Int?, y: Int?) {
         if (x != null && y != null && !inMap(x, y)) return
         ScriptEngine.putTrigger(g, t.copy(x = x, y = y))
+    }
+
+    /** Resizes a trigger to [w]×[h] tiles (1–16 each), keeping it inside the map. */
+    fun resizeTrigger(t: ScriptEngine.Trigger, w: Int, h: Int) {
+        val x = t.x ?: return; val y = t.y ?: return
+        val cw = w.coerceIn(1, minOf(16, width * 2 - x)); val ch = h.coerceIn(1, minOf(16, height * 2 - y))
+        ScriptEngine.putTrigger(g, t.copy(width = cw, height = ch))
     }
 
     fun removeTrigger(t: ScriptEngine.Trigger) = ScriptEngine.removeTrigger(g, id, t.textId)

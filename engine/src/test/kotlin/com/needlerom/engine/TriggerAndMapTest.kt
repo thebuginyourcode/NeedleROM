@@ -26,12 +26,16 @@ class TriggerAndMapTest {
         // A Youngster by the bed, and a trigger on the tile right of where the player starts.
         val npc = g.world.map(bedroom).addNpc(sprite = 4, x = 1, y = 6, movement = Movement.FACE_RIGHT, behavior = Behavior.Talk("Hi!"))
         val team = listOf(PartyMon(3, 0xA5), PartyMon(4, 0x24)) // Rattata, Pidgey
-        val t = g.world.map(bedroom).addTrigger(4, 6, EventScript(listOf(
+        // A 1×4 rectangle from (4,3) down to (4,6), so the step onto (4,6) lands in its bottom tile.
+        val t0 = g.world.map(bedroom).addTrigger(4, 3, EventScript(listOf(
             Step.Say("Hey, you!"),
             Step.WalkToPlayer(npc),
             Step.Say("Let's battle!"),
             Step.TrainerBattle(1, 0, customTeam = team),
         )))
+        g.world.map(bedroom).resizeTrigger(t0, 1, 4)
+        val t = ScriptEngine.triggers(g, bedroom).single()
+        assertEquals(1 to 4, t.width to t.height)
         val saved = assertNotNull(ScriptEngine.get(g, bedroom, t.textId))
         val battle = saved.steps.last() as Step.TrainerBattle
         assertTrue(battle.team > 13, "custom team appended to the Youngster class: ${battle.team}")

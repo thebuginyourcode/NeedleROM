@@ -4,8 +4,8 @@
 ;   $4000  "NEEDLE", format version, reserved
 ;   $4008  jp NeedleRun        (called through a ROM0 text_asm hook)
 ;   $400B  jp NeedleMapScript  (called every frame through a per-map script hook)
-;   $4600  trigger table: 8-byte entries (map, x, y, text id, dw flag address, flag mask, 0),
-;          $FF-terminated; x/y of $FF match anywhere on the map
+;   $4600  trigger table: 8-byte entries (map, x, y, text id, dw flag address, flag mask,
+;          size = (width-1)<<4 | (height-1)), $FF-terminated; x/y of $FF match anywhere
 ;   $4800  script table: entries of (map id, text id, script pointer), $FF-terminated
 ;   $4C00+ script bytecode, dialogue and battle texts
 ;
@@ -48,7 +48,7 @@ DEF OP_WALK_TO_PLAYER EQU 17 ; db sprite index (1-based); pauses the event until
 DEF NUM_OPS         EQU 18
 
 SECTION "NeedleHeader", ROMX[$4000], BANK[1]
-	db "NEEDLE", 2, 0
+	db "NEEDLE", 3, 0
 
 SECTION "NeedleRun", ROMX[$4008], BANK[1]
 	jp NeedleRun
@@ -400,22 +400,38 @@ NeedleMapScript::
 	cp c
 	jp nz, .next
 	push hl
+	ld de, 7
+	add hl, de
+	ld d, [hl]  ; size
+	pop hl
+	push hl
 	inc hl
 	ld a, [hli] ; x
 	cp $FF
 	jp z, .xOk
 	ld b, a
 	ld a, [wXCoord]
-	cp b
-	jp nz, .no
+	sub b
+	jp c, .no
+	ld b, a
+	ld a, d
+	swap a
+	and $0F
+	cp b        ; width-1 < dx?
+	jp c, .no
 .xOk
 	ld a, [hli] ; y
 	cp $FF
 	jp z, .yOk
 	ld b, a
 	ld a, [wYCoord]
+	sub b
+	jp c, .no
+	ld b, a
+	ld a, d
+	and $0F
 	cp b
-	jp nz, .no
+	jp c, .no
 .yOk
 	ld a, [hli] ; text id
 	ld b, a
