@@ -26,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -139,6 +141,33 @@ fun Section(title: String? = null, modifier: Modifier = Modifier, content: @Comp
             if (title != null) Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             content()
         }
+    }
+}
+
+/** A collapsible group of properties, like an engine inspector's sections. */
+@Composable
+fun PropSection(title: String, initiallyOpen: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    var open by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(initiallyOpen) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable { open = !open }
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(if (open) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
+                Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        }
+        if (open) Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
+/** A read-only property: label on the left, value on the right. */
+@Composable
+fun PropRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, Modifier.weight(0.38f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, Modifier.weight(0.62f), style = MaterialTheme.typography.bodySmall)
     }
 }
 

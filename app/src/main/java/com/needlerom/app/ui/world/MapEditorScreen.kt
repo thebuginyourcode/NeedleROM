@@ -71,6 +71,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.needlerom.app.AppState
 import com.needlerom.app.ui.Chooser
+import com.needlerom.app.ui.NeedleIcons
+import com.needlerom.app.ui.PropRow
+import com.needlerom.app.ui.PropSection
 import com.needlerom.app.ui.Hint
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -86,7 +89,10 @@ import com.needlerom.engine.pokered.World
 import kotlin.math.ceil
 import kotlin.math.floor
 
-enum class Tool(val label: String, val short: String) { MOVE("Move", "✥ Move"), PAINT("Paint", "✎ Paint"), FILL("Fill", "▨ Fill"), PICK("Pick", "⌖ Pick"), EVENTS("Objects", "◉ Objects") }
+enum class Tool(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    MOVE("Move", NeedleIcons.Move), PAINT("Paint", NeedleIcons.Paint), FILL("Fill", NeedleIcons.Fill),
+    PICK("Pick", NeedleIcons.Pick), EVENTS("Objects", NeedleIcons.Objects),
+}
 
 sealed interface Selection {
     data class Npc(val index: Int) : Selection
@@ -195,19 +201,24 @@ private fun select(st: EditorState, s: Selection) { st.tool = Tool.EVENTS; st.se
 
 /** Tool buttons for the studio toolbar. */
 @Composable
-fun MapTools(state: AppState, mapId: Int) {
+fun MapTools(state: AppState, mapId: Int, labels: Boolean) {
     val st = state.editor(mapId)
-    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.background(MaterialTheme.colorScheme.surfaceContainerLowest, RoundedCornerShape(6.dp)).padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
         Tool.entries.forEach { t ->
             val on = st.tool == t
-            Text(
-                t.short,
-                Modifier.background(if (on) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(4.dp))
+            Row(
+                Modifier.background(if (on) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(5.dp))
                     .clickable { st.tool = t; if (t != Tool.EVENTS) st.selection = null }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
-                color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge,
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(t.icon, t.label, Modifier.size(18.dp), tint = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                if (labels) Text(t.label, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelMedium,
+                    color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -228,66 +239,62 @@ private fun MapProperties(state: AppState, map: GameMap, st: EditorState, gfx: G
     val game = map.world.game
     val created = remember(map) { map.id in map.world.createdMaps() }
     val sounds = remember(game) { com.needlerom.engine.script.ScriptEngine.sounds(game) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(state.mapName(map.id), fontWeight = FontWeight.Bold)
-        if (created) {
-            var name by remember(map.id) { mutableStateOf(state.mapName(map.id)) }
-            OutlinedTextField(name, { name = it; state.project?.let { p -> p.mapNames[map.id] = it.ifBlank { "New map" }; p.saveMeta() } },
-                Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name") })
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        PropSection("Map") {
+            if (created) {
+                var name by remember(map.id) { mutableStateOf(state.mapName(map.id)) }
+                OutlinedTextField(name, { name = it; state.project?.let { p -> p.mapNames[map.id] = it.ifBlank { "New map" }; p.saveMeta() } },
+                    Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name") })
+            } else PropRow("Name", state.mapName(map.id))
+            PropRow("ID", "0x" + map.id.toString(16).uppercase().padStart(2, '0'))
+            PropRow("Size", "${map.width}×${map.height} blocks")
+            PropRow("Tileset", com.needlerom.engine.pokered.Names.TILESETS[map.tilesetId] ?: "Tileset ${map.tilesetId}")
+            PropRow("Contents", "${map.npcs.size} NPCs, ${map.signs.size} signs, ${map.warps.size} doors, ${map.triggers.size} triggers")
         }
-        Prop("Map ID", "0x" + map.id.toString(16).uppercase().padStart(2, '0'))
-        Prop("Size", "${map.width}×${map.height} blocks (${map.stepWidth}×${map.stepHeight} steps)")
-        Prop("Tileset", com.needlerom.engine.pokered.Names.TILESETS[map.tilesetId] ?: "Tileset ${map.tilesetId}")
-        Prop("Objects", "${map.npcs.size} NPCs · ${map.signs.size} signs · ${map.warps.size} doors · ${map.triggers.size} triggers")
-        val (music, bank) = remember(map) { map.world.music(map.id) }
-        Chooser("Music", sounds.music.firstOrNull { it.first == music && it.second == bank }?.third ?: "Track $music",
-            sounds.music, { it.third }, Modifier.fillMaxWidth()) { m ->
-            state.edit("Music: ${m.third}") { map.world.setMusic(map.id, m.first, m.second) }
+        PropSection("Add") {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilledTonalButton(onClick = { st.adding = "npc" }, enabled = map.canAddNpc, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("NPC") }
+                FilledTonalButton(onClick = { st.adding = "sign" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Sign") }
+                FilledTonalButton(onClick = { st.adding = "door" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Door") }
+                FilledTonalButton(onClick = { st.adding = "trigger" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Trigger") }
+            }
+            map.triggers.filter { it.x == null }.forEach { t ->
+                TextButton(onClick = { select(st, Selection.Trigger(t.textId)) }) { Text("Edit the map-entry trigger") }
+            }
         }
-        Text("Add", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilledTonalButton(onClick = { st.adding = "npc" }, enabled = map.canAddNpc, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ NPC") }
-            FilledTonalButton(onClick = { st.adding = "sign" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Sign") }
-            FilledTonalButton(onClick = { st.adding = "door" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Door") }
-            FilledTonalButton(onClick = { st.adding = "trigger" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Trigger") }
+        PropSection("Music & look") {
+            val (music, bank) = remember(map) { map.world.music(map.id) }
+            Chooser("Music", sounds.music.firstOrNull { it.first == music && it.second == bank }?.third ?: "Track $music",
+                sounds.music, { it.third }, Modifier.fillMaxWidth()) { m ->
+                state.edit("Music: ${m.third}") { map.world.setMusic(map.id, m.first, m.second) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Image(gfx.block(map.tilesetId, map.borderBlock), null, Modifier.size(28.dp), filterQuality = FilterQuality.None)
+                Text("Border: block ${map.borderBlock}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { state.edit("Border block set") { map.setBorderBlock(st.block) } }, enabled = map.eventsValid) { Text("Use block ${st.block}") }
+            }
         }
-        map.triggers.filter { it.x == null }.forEach { t ->
-            TextButton(onClick = { select(st, Selection.Trigger(t.textId)) }) { Text("Map-entry trigger (text #${t.textId})") }
-        }
-        Text("Border", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Image(gfx.block(map.tilesetId, map.borderBlock), null, Modifier.size(32.dp), filterQuality = FilterQuality.None)
-            Text("Block ${map.borderBlock}", Modifier.weight(1f))
-            TextButton(onClick = { state.edit("Border block set") { map.setBorderBlock(st.block) } }, enabled = map.eventsValid) { Text("Use tile ${st.block}") }
-        }
-        if (map.connections.isNotEmpty()) {
-            Text("Connections", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        if (map.connections.isNotEmpty()) PropSection("Connections", initiallyOpen = false) {
             map.connections.forEach { (dir, target) ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("$dir: ${state.mapName(target)}", Modifier.weight(1f))
+                    Text("$dir", Modifier.weight(0.3f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(state.mapName(target), Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { state.go(com.needlerom.app.Route.MapEditor(target)) }) { Text("Open") }
                 }
             }
         }
-        Text("View", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(st.showGrid, { st.showGrid = !st.showGrid }, label = { Text("Grid") })
-            FilterChip(st.showCollision, { st.showCollision = !st.showCollision }, label = { Text("Blocked tiles") })
-            TextButton(onClick = { st.fit(map) }) { Text("Fit") }
+        PropSection("View & test") {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(st.showGrid, { st.showGrid = !st.showGrid }, label = { Text("Grid") })
+                FilterChip(st.showCollision, { st.showCollision = !st.showCollision }, label = { Text("Blocked tiles") })
+                TextButton(onClick = { st.fit(map) }) { Text("Fit to view") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { state.go(com.needlerom.app.Route.WildEditor(map.id)) }) { Text("Wild Pokémon") }
+                OutlinedButton(onClick = { playHere(state, map, st) }) { Text("Play here") }
+            }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(onClick = { state.go(com.needlerom.app.Route.WildEditor(map.id)) }) { Text("Wild Pokémon") }
-            OutlinedButton(onClick = { playHere(state, map, st) }) { Text("▶ Play here") }
-        }
-        Hint("Select an object on the map (Events tool) to edit it here.")
-    }
-}
-
-@Composable
-private fun Prop(label: String, value: String) {
-    Row(Modifier.fillMaxWidth()) {
-        Text(label, Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
+        Hint("Tip: pick the Objects tool and tap something on the map to edit it.", Modifier.padding(12.dp))
     }
 }
 

@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -67,7 +68,7 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                         Text(when (n.kind) { NpcKind.PERSON -> "NPC"; NpcKind.TRAINER -> "Trainer"; NpcKind.ITEM -> "Item ball" } + " #${n.index + 1}", fontWeight = FontWeight.Bold)
                         Hint("${game.spriteName(n.sprite)} · (${n.x}, ${n.y}) · tap sprite to change")
                     }
-                    TextButton(onClick = { st.selection = null }) { Text("Done") }
+                    androidx.compose.material3.IconButton(onClick = { st.selection = null }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "Deselect") }
                 }
                 Chooser("Movement", Movement.of(n.movement, n.range)?.label ?: "Custom", Movement.entries.toList(), { it.label }, Modifier.fillMaxWidth()) { m ->
                     state.edit { map.setMovement(n, m) }
@@ -101,7 +102,7 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                         Text("Sign #${s.index + 1}", fontWeight = FontWeight.Bold)
                         Hint("(${s.x}, ${s.y}) · drag on the map to move")
                     }
-                    TextButton(onClick = { st.selection = null }) { Text("Done") }
+                    androidx.compose.material3.IconButton(onClick = { st.selection = null }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "Deselect") }
                 }
                 BehaviorEditor(state, game, map, s.textId, isNpc = false, npcIndex = -1)
                 if (s.index >= map.firstAddedSign) {
@@ -117,7 +118,7 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                         Text("Door #${w.index + 1}", fontWeight = FontWeight.Bold)
                         Hint("(${w.x}, ${w.y}) · drag on the map to move")
                     }
-                    TextButton(onClick = { st.selection = null }) { Text("Done") }
+                    androidx.compose.material3.IconButton(onClick = { st.selection = null }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "Deselect") }
                 }
                 val dest = if (w.destMap == 0xFF) "Back outside (where the player came from)" else state.mapName(w.destMap)
                 Chooser("Leads to", dest, listOf(0xFF) + game.world.maps.map { it.id },
@@ -142,7 +143,7 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                         Text("Trigger", fontWeight = FontWeight.Bold)
                         Hint(if (t.x == null) "Runs when the player enters this map" else "(${t.x}, ${t.y}) · ${t.width}×${t.height} tiles · runs when the player steps in it · drag to move")
                     }
-                    TextButton(onClick = { st.selection = null }) { Text("Done") }
+                    androidx.compose.material3.IconButton(onClick = { st.selection = null }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "Deselect") }
                 }
                 Hint("Runs once per game (remembered with flag ${t.flag}).")
                 if (t.x != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

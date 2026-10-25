@@ -63,6 +63,18 @@ import com.needlerom.app.ui.world.MapInspector
 import com.needlerom.app.ui.world.MapTiles
 import com.needlerom.app.ui.world.MapTools
 import com.needlerom.app.ui.world.MapView
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.draw.clip
 import com.needlerom.app.ui.world.editor
 import com.needlerom.app.ui.world.playHere
 import com.needlerom.engine.pokered.PokeRed
@@ -90,7 +102,7 @@ fun StudioScreen(state: AppState, files: Files) {
         val sideDock = !wide && maxWidth > maxHeight && maxWidth >= 560.dp
         val dockHeight = maxHeight * 0.42f
         Column(Modifier.fillMaxSize()) {
-            Toolbar(state, files, onRename = { renaming = true }, onNewMap = { creatingMap = true })
+            Toolbar(state, files, labels = maxWidth >= 700.dp, onRename = { renaming = true }, onNewMap = { creatingMap = true })
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             when {
                 wide -> Row(Modifier.weight(1f)) {
@@ -148,59 +160,62 @@ private fun compactPanes(state: AppState) =
 // ---- Toolbar ---------------------------------------------------------------------------------
 
 @Composable
-private fun Toolbar(state: AppState, files: Files, onRename: () -> Unit, onNewMap: () -> Unit) {
+private fun Toolbar(state: AppState, files: Files, labels: Boolean, onRename: () -> Unit, onNewMap: () -> Unit) {
     val game = state.game ?: return
     val project = state.project ?: return
     var menu by remember { mutableStateOf(false) }
     val mapDoc = state.doc as? Route.MapEditor
     Row(
-        Modifier.fillMaxWidth().height(46.dp).background(MaterialTheme.colorScheme.surfaceContainer).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().height(48.dp).background(MaterialTheme.colorScheme.surfaceContainer).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box {
-            ToolButton("☰ ${project.name}", bold = true) { menu = true }
+            Row(
+                Modifier.clip(RoundedCornerShape(6.dp)).clickable { menu = true }.padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Menu, "Project menu", Modifier.size(20.dp))
+                Column(Modifier.padding(start = 8.dp)) {
+                    Text(project.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(game.version.name + if (!game.exact) " · modified" else "", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("New map…") }, onClick = { menu = false; onNewMap() })
+                HorizontalDivider()
                 ExportKind.entries.forEach { k -> DropdownMenuItem(text = { Text("Export ${k.label}…") }, onClick = { menu = false; files.export(k) }) }
+                HorizontalDivider()
                 DropdownMenuItem(text = { Text("Rename project") }, onClick = { menu = false; onRename() })
                 DropdownMenuItem(text = { Text("Close project") }, onClick = { menu = false; state.go(Route.Home) })
             }
         }
-        Text(game.version.name + if (!game.exact) " (modified)" else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Sep()
-        ToolButton("↶ Undo", enabled = game.rom.canUndo.also { state.revision }) { state.undo() }
-        if (mapDoc != null) {
-            Sep()
-            MapTools(state, mapDoc.mapId)
+        IconButton(onClick = { state.undo() }, enabled = game.rom.canUndo.also { state.revision }) { Icon(NeedleIcons.Undo, "Undo", Modifier.size(20.dp)) }
+        if (mapDoc != null) MapTools(state, mapDoc.mapId, labels)
+        Spacer(Modifier.width(4.dp))
+        if (mapDoc != null) OutlinedButton(onClick = { playHere(state, game.world.map(mapDoc.mapId), state.editor(mapDoc.mapId)) },
+            contentPadding = PaddingValues(horizontal = 12.dp)) {
+            Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp)); Text("Here", Modifier.padding(start = 4.dp))
         }
-        Sep()
-        if (mapDoc != null) ToolButton("▶ Here", accent = true) {
-            val map = game.world.map(mapDoc.mapId)
-            playHere(state, map, state.editor(mapDoc.mapId))
+        Button(onClick = { state.go(Route.Playtest()) }, contentPadding = PaddingValues(horizontal = 12.dp)) {
+            Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp)); Text("Play", Modifier.padding(start = 4.dp))
         }
-        ToolButton("▶ Play", accent = true) { state.go(Route.Playtest()) }
     }
 }
 
+/** A tab with an underline when selected, used for documents and dock panels. */
 @Composable
-private fun Sep() = Box(Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
-
-@Composable
-private fun ToolButton(label: String, enabled: Boolean = true, bold: Boolean = false, accent: Boolean = false, onClick: () -> Unit) {
-    Text(
-        label,
-        Modifier.background(if (accent) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(4.dp))
-            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp),
-        color = when {
-            !enabled -> MaterialTheme.colorScheme.outline
-            accent -> MaterialTheme.colorScheme.onPrimaryContainer
-            else -> MaterialTheme.colorScheme.onSurface
-        },
-        fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
-        style = MaterialTheme.typography.labelLarge,
-        maxLines = 1,
-    )
+private fun TabLabel(text: String, selected: Boolean, onClick: () -> Unit, onClose: (() -> Unit)? = null) {
+    Column(Modifier.clickable(onClick = onClick).background(if (selected) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent)) {
+        Row(Modifier.padding(start = 12.dp, end = if (onClose != null) 2.dp else 12.dp, top = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp),
+                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            if (onClose != null) Icon(Icons.Filled.Close, "Close", Modifier.padding(start = 6.dp).size(16.dp).clip(RoundedCornerShape(4.dp)).clickable(onClick = onClose),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box(Modifier.height(2.dp).fillMaxWidth().background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent))
+    }
 }
 
 // ---- Documents -------------------------------------------------------------------------------
@@ -208,12 +223,12 @@ private fun ToolButton(label: String, enabled: Boolean = true, bold: Boolean = f
 private fun docLabel(state: AppState, d: Route): String {
     val g = state.game
     return when (d) {
-        is Route.MapEditor -> "▦ " + state.mapName(d.mapId)
-        is Route.ScriptEditor -> "✎ " + d.title
-        is Route.PokemonEditor -> "◓ " + (g?.monName(g.internalOfDex(d.dex)) ?: "Pokémon")
-        is Route.TrainerEditor -> "⚔ " + (g?.trainerClassNames?.getOrNull(d.trainerClass) ?: "Trainer")
-        is Route.WildEditor -> "❀ Wild: " + state.mapName(d.mapId)
-        is Route.Playtest -> if (d.start == null) "▶ Game" else "▶ Game (from ${state.mapName(d.start.first)})"
+        is Route.MapEditor -> state.mapName(d.mapId)
+        is Route.ScriptEditor -> "Event: " + d.title
+        is Route.PokemonEditor -> g?.monName(g.internalOfDex(d.dex)) ?: "Pokémon"
+        is Route.TrainerEditor -> "Trainer: " + (g?.trainerClassNames?.getOrNull(d.trainerClass) ?: "?")
+        is Route.WildEditor -> "Wild: " + state.mapName(d.mapId)
+        is Route.Playtest -> if (d.start == null) "Game" else "Game · ${state.mapName(d.start.first)}"
         else -> "?"
     }
 }
@@ -222,17 +237,7 @@ private fun docLabel(state: AppState, d: Route): String {
 private fun DocTabs(state: AppState) {
     Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow).horizontalScroll(rememberScrollState())) {
         state.docs.forEachIndexed { i, d ->
-            val on = i == state.activeDoc
-            Row(
-                Modifier.background(if (on) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)
-                    .clickable { state.activeDoc = i }.padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(docLabel(state, d), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 220.dp),
-                    color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("×", Modifier.clickable { state.closeDoc(i) }.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            TabLabel(docLabel(state, d), i == state.activeDoc, onClick = { state.activeDoc = i }, onClose = { state.closeDoc(i) })
         }
     }
 }
@@ -273,18 +278,12 @@ private fun Dock(panes: List<Pane>, modifier: Modifier, collapsed: Boolean = fal
         Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
                 panes.forEach { p ->
-                    val on = p == pane && !collapsed
-                    Text(
-                        p.label.uppercase(),
-                        Modifier.clickable { picked = p.name; if (collapsed) onToggle?.invoke() }
-                            .background(if (on) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent)
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                        color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    TabLabel(p.label, p == pane && !collapsed, onClick = { picked = p.name; if (collapsed) onToggle?.invoke() })
                 }
             }
-            if (onToggle != null) Text(if (collapsed) "▴" else "▾", Modifier.clickable(onClick = onToggle).padding(horizontal = 12.dp, vertical = 6.dp))
+            if (onToggle != null) IconButton(onClick = onToggle) {
+                Icon(if (collapsed) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, if (collapsed) "Show panel" else "Hide panel")
+            }
         }
         if (!collapsed) Box(Modifier.weight(1f).fillMaxWidth()) { content(pane) }
     }

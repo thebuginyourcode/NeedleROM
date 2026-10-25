@@ -14,6 +14,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -50,7 +57,8 @@ import com.needlerom.engine.script.Step
 import com.needlerom.engine.script.Templates
 
 /** Names and pickers shared by the step editors. */
-private class Ctx(val game: PokeRed, val flagNames: Map<Int, String>, val npcs: List<com.needlerom.engine.pokered.Npc>, val isTrigger: Boolean) {
+private class Ctx(val game: PokeRed, val flagNames: Map<Int, String>, val npcs: List<com.needlerom.engine.pokered.Npc>, val isTrigger: Boolean,
+                  val mapW: Int, val mapH: Int) {
     fun npc(i: Int) = npcs.getOrNull(i)?.let { "NPC #${i + 1} (${game.spriteName(it.sprite)})" } ?: "NPC #${i + 1}"
     val species = game.species.map { it.first }
     fun mon(internal: Int) = "#${game.dexOf(internal).toString().padStart(3, '0')} ${game.monName(internal)}"
@@ -70,7 +78,7 @@ fun ScriptEditorScreen(state: AppState, r: Route.ScriptEditor) {
     var steps by remember(r) { mutableStateOf(saved.steps) }
     val dirty = steps != saved.steps
     val isTrigger = remember(map, r.textId) { map.triggers.any { it.textId == r.textId } }
-    val ctx = remember(game, state.project, map) { Ctx(game, state.project?.flagNames ?: emptyMap(), map.npcs, isTrigger) }
+    val ctx = remember(game, state.project, map) { Ctx(game, state.project?.flagNames ?: emptyMap(), map.npcs, isTrigger, map.stepWidth, map.stepHeight) }
     var templates by remember { mutableStateOf(false) }
 
     Screen(
@@ -84,7 +92,7 @@ fun ScriptEditorScreen(state: AppState, r: Route.ScriptEditor) {
             }) { Text("Save") }
         },
     ) {
-        Hint("Runs when the player talks to this NPC or reads this sign. Steps run top to bottom; battles start when the text box closes.")
+        Hint(if (isTrigger) "Runs when the player steps on the trigger. Steps run top to bottom." else "Runs when the player talks to this NPC or reads this sign. Steps run top to bottom; battles start when the text box closes.")
         StepList(ctx, steps, depth = 0) { steps = it }
         if (dirty) Hint("Unsaved changes. Tap Save, then playtest.")
     }
@@ -102,7 +110,7 @@ fun ScriptEditorScreen(state: AppState, r: Route.ScriptEditor) {
                         "Healer" to { Templates.healer() },
                         "Legendary encounter (once)" to { val m = game.internalOfDex(146); Templates.legendary(m, game.monName(m), 50, freeFlag) },
                         "Trainer battle (once)" to { Templates.trainer(1, 1, freeFlag) },
-                    ) + if (isTrigger && map.npcs.isNotEmpty()) listOf(
+                    ) + if (map.npcs.isNotEmpty()) listOf(
                         "Trainer spots you and walks over" to {
                             val y = game.internalOfDex(19); val p = game.internalOfDex(16)
                             Templates.ambush(map.npcs.size - 1, 1, listOf(com.needlerom.engine.pokered.PartyMon(5, y), com.needlerom.engine.pokered.PartyMon(6, p)))
@@ -159,15 +167,17 @@ private fun StepCard(ctx: Ctx, step: Step, depth: Int, onChange: (Step?) -> Unit
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, BLOCK_COLORS[depth % BLOCK_COLORS.size]),
+        border = BorderStroke(1.dp, if (depth == 0) MaterialTheme.colorScheme.outlineVariant else BLOCK_COLORS[depth % BLOCK_COLORS.size]),
     ) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+        Box(Modifier.width(4.dp).fillMaxHeight().background(categoryColor(step)))
+        Column(Modifier.weight(1f).padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(title(ctx, step), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                    detail(ctx, step)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Column(Modifier.weight(1f).clickable(enabled = hasEditor(step)) { editing = true }) {
+                    Text(title(ctx, step), fontWeight = FontWeight.SemiBold)
+                    detail(ctx, step)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
-                if (hasEditor(step)) TextButton(onClick = { editing = true }) { Text("Edit") }
+                if (hasEditor(step)) IconButton(onClick = { editing = true }) { Icon(Icons.Filled.Edit, "Edit step", Modifier.size(18.dp)) }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Step options") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -194,6 +204,7 @@ private fun StepCard(ctx: Ctx, step: Step, depth: Int, onChange: (Step?) -> Unit
                 is Step.GivePokemon -> Branch("If there's no room (then stop)") { StepList(ctx, step.ifNoRoom, depth + 1) { onChange(step.copy(ifNoRoom = it)) } }
                 else -> {}
             }
+        }
         }
     }
     if (editing) StepDialog(ctx, step, onDismiss = { editing = false }) { onChange(it); editing = false }
@@ -228,6 +239,7 @@ private fun title(c: Ctx, s: Step): String = when (s) {
     is Step.PlayCry -> "Cry: ${c.mon(s.species)}"
     is Step.PlayMusic -> "Change music: ${c.music(s.music, s.bank)}"
     is Step.WalkToPlayer -> "${c.npc(s.npc)} walks up to the player"
+    is Step.Lead -> "${c.npc(s.npc)} says follow me, to (${s.x}, ${s.y})"
 }
 
 private fun detail(c: Ctx, s: Step): String? = when (s) {
@@ -242,34 +254,66 @@ private fun hasEditor(s: Step) = s != Step.Heal
 
 @Composable
 private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit) {
-    val options: List<Pair<String, () -> Step>> = listOf(
-        "Say something" to { Step.Say("Hello!") },
-        "Ask yes / no" to { Step.Ask("Do you want it?", listOf(Step.Say("Great!")), listOf(Step.Say("Oh well."))) },
-        "Give item" to { Step.GiveItem(4, 1) },
-        "Give Pokémon" to { Step.GivePokemon(ctx.species.first(), 5) },
-        "Take item" to { Step.TakeItem(4) },
-        "If player has item" to { Step.IfHasItem(4, emptyList(), emptyList()) },
-        "Set flag" to { Step.SetFlag(0) },
-        "Clear flag" to { Step.ClearFlag(0) },
-        "If flag is set" to { Step.IfFlag(0, emptyList(), emptyList()) },
-        "Heal the party" to { Step.Heal },
-        "Give money" to { Step.GiveMoney(500) },
-        "Wild battle" to { Step.WildBattle(ctx.species.first(), 5) },
-        "Trainer battle" to { Step.TrainerBattle(1, 1) },
-        "Play sound effect" to { Step.PlaySound(ctx.sounds.effects.first().first) },
-        "Play a Pokémon's cry" to { Step.PlayCry(ctx.species.first()) },
-        "Change music" to { ctx.sounds.music.first().let { Step.PlayMusic(it.first, it.second) } },
-    ) + if (ctx.isTrigger && ctx.npcs.isNotEmpty()) listOf("NPC walks up to the player" to { Step.WalkToPlayer(ctx.npcs.size - 1) }) else emptyList()
+    val lastNpc = (ctx.npcs.size - 1).coerceAtLeast(0)
+    val groups: List<Pair<String, List<Pair<String, () -> Step>>>> = listOf(
+        "Talk" to listOf(
+            "Say something" to { Step.Say("Hello!") },
+            "Ask yes / no" to { Step.Ask("Do you want it?", listOf(Step.Say("Great!")), listOf(Step.Say("Oh well."))) },
+        ),
+        "Give & take" to listOf(
+            "Give item" to { Step.GiveItem(4, 1) },
+            "Take item" to { Step.TakeItem(4) },
+            "Give Pokémon" to { Step.GivePokemon(ctx.species.first(), 5) },
+            "Give money" to { Step.GiveMoney(500) },
+            "Heal the party" to { Step.Heal },
+        ),
+        "Conditions & flags" to listOf(
+            "If player has item" to { Step.IfHasItem(4, emptyList(), emptyList()) },
+            "If flag is set" to { Step.IfFlag(0, emptyList(), emptyList()) },
+            "Set flag" to { Step.SetFlag(0) },
+            "Clear flag" to { Step.ClearFlag(0) },
+        ),
+        "Battles" to listOf(
+            "Wild battle" to { Step.WildBattle(ctx.species.first(), 5) },
+            "Trainer battle" to { Step.TrainerBattle(1, 1) },
+        ),
+        "Movement" to if (ctx.npcs.isEmpty()) emptyList() else listOf(
+            "NPC walks up to the player" to { Step.WalkToPlayer(lastNpc) },
+            "Follow me (NPC leads the player)" to { Step.Lead(lastNpc, ctx.npcs[lastNpc].x, (ctx.npcs[lastNpc].y - 3).coerceAtLeast(0)) },
+        ),
+        "Sound" to listOf(
+            "Play sound effect" to { Step.PlaySound(ctx.sounds.effects.first().first) },
+            "Play a Pokémon's cry" to { Step.PlayCry(ctx.species.first()) },
+            "Change music" to { ctx.sounds.music.first().let { Step.PlayMusic(it.first, it.second) } },
+        ),
+    ).filter { it.second.isNotEmpty() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add step") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                options.forEach { (label, make) -> TextButton(onClick = { onAdd(make()) }) { Text(label) } }
+                groups.forEach { (group, options) ->
+                    Text(group, Modifier.padding(top = 10.dp, bottom = 2.dp), style = MaterialTheme.typography.labelMedium,
+                        color = categoryColor(options.first().second()), fontWeight = FontWeight.Bold)
+                    options.forEach { (label, make) ->
+                        Text(label, Modifier.fillMaxWidth().clickable { onAdd(make()) }.padding(vertical = 9.dp, horizontal = 4.dp))
+                    }
+                }
+                if (ctx.npcs.isEmpty()) Hint("Add an NPC to this map to use movement steps.", Modifier.padding(top = 8.dp))
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** A color per kind of step, so long scripts are easy to scan. */
+private fun categoryColor(s: Step): Color = when (s) {
+    is Step.Say, is Step.Ask -> Color(0xFF6BB3F0)
+    is Step.GiveItem, is Step.TakeItem, is Step.GivePokemon, is Step.GiveMoney, Step.Heal -> Color(0xFF8EE08A)
+    is Step.IfHasItem, is Step.IfFlag, is Step.SetFlag, is Step.ClearFlag -> Color(0xFFFFB454)
+    is Step.WildBattle, is Step.TrainerBattle -> Color(0xFFFF7A7A)
+    is Step.WalkToPlayer, is Step.Lead -> Color(0xFFC792EA)
+    is Step.PlaySound, is Step.PlayCry, is Step.PlayMusic -> Color(0xFF5FD7C8)
 }
 
 /** Edits the fields of one step. Branch contents are edited inline in the card. */
@@ -334,7 +378,16 @@ private fun StepDialog(ctx: Ctx, step: Step, onDismiss: () -> Unit, onSave: (Ste
                     }
                     is Step.WalkToPlayer -> {
                         Chooser("Who", ctx.npc(v.npc), ctx.npcs.indices.toList(), ctx::npc, Modifier.fillMaxWidth()) { s = v.copy(npc = it) }
-                        Hint("They walk until they're next to the player, then the event continues. Works best with NPCs that stand still.")
+                        Hint("They walk until they're next to the player, then the event continues.")
+                    }
+                    is Step.Lead -> {
+                        Chooser("Who", ctx.npc(v.npc), ctx.npcs.indices.toList(), ctx::npc, Modifier.fillMaxWidth()) { s = v.copy(npc = it) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumberField("To X", v.x, Modifier.weight(1f), 0 until ctx.mapW) { s = v.copy(x = it) }
+                            NumberField("To Y", v.y, Modifier.weight(1f), 0 until ctx.mapH) { s = v.copy(y = it) }
+                        }
+                        Hint("The NPC walks to that tile and the player follows one step behind, then the event continues. " +
+                            "They go in straight lines (through anything in the way), so pick a clear route. Coordinates are shown in the map's Inspector when you select something.")
                     }
                     is Step.GiveMoney -> NumberField("Amount (¥)", v.amount, Modifier.fillMaxWidth(), 0..999999) { s = v.copy(amount = it) }
                     is Step.PlaySound -> {
