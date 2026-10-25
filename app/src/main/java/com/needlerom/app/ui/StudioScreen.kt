@@ -101,8 +101,9 @@ fun StudioScreen(state: AppState, files: Files) {
         val wide = maxWidth >= 840.dp
         val sideDock = !wide && maxWidth > maxHeight && maxWidth >= 560.dp
         val dockHeight = maxHeight * 0.42f
+        val labels = maxWidth >= 700.dp
         Column(Modifier.fillMaxSize()) {
-            Toolbar(state, files, labels = maxWidth >= 700.dp, onRename = { renaming = true }, onNewMap = { creatingMap = true })
+            Toolbar(state, files, labels = labels, onRename = { renaming = true }, onNewMap = { creatingMap = true })
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             when {
                 wide -> Row(Modifier.weight(1f)) {
