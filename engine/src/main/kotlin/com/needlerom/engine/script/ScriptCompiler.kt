@@ -44,6 +44,9 @@ internal class ScriptCompiler(private val wEventFlags: Int, private val wObtaine
         for (k in 0 until 3) b(((d[k * 2] - '0') shl 4) or (d[k * 2 + 1] - '0'))
     }
 
+    /** A raw wEventFlags bit (the game's own story flags). */
+    private fun event(e: Int) { w(wEventFlags + e / 8); b(1 shl (e % 8)) }
+
     private fun flag(n: Int) {
         require(n in 0 until Flags.COUNT) { "Flag $n out of range" }
         val e = Flags.FIRST_EVENT + n
@@ -151,6 +154,14 @@ internal class ScriptCompiler(private val wEventFlags: Int, private val wObtaine
                 }
             }
             Step.End -> b(Op.END)
+            is Step.IfGameEvent -> {
+                val notSet = Label(); val end = Label()
+                b(Op.IF_NOT_FLAG); event(s.event); ref(notSet)
+                steps(s.then, last); b(Op.JUMP); ref(end)
+                mark(notSet); steps(s.otherwise, last)
+                mark(end)
+            }
+            is Step.SetGameEvent -> { b(if (s.value) Op.SET_FLAG else Op.CLEAR_FLAG); event(s.event) }
             is Step.PlayCry -> { b(Op.CRY); b(s.species) }
             is Step.PlayMusic -> { b(Op.MUSIC); b(s.music); b(s.bank) }
         }

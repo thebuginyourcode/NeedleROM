@@ -520,7 +520,7 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
         rom.write16(textPtrField, Gb.ptr(at), "Text table of ${info.name}")
     }
 
-    private fun textAddress(textId: Int): Int? {
+    internal fun textAddress(textId: Int): Int? {
         if (textId !in 1..textTableSize) return null
         return Gb.offset(bank, rom.u16(textTableOffset + (textId - 1) * 2))
     }

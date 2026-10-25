@@ -104,6 +104,10 @@ sealed interface Step {
 
     /** Stops the event here. */
     data object End : Step
+
+    /** The game's own story flags (EVENT_* bits, e.g. "got Pokédex"), as used by its scripts. */
+    data class IfGameEvent(val event: Int, val then: List<Step>, val otherwise: List<Step>) : Step
+    data class SetGameEvent(val event: Int, val value: Boolean) : Step
 }
 
 /** A step direction, with its codes for NPC movement, the joypad and facing. */
@@ -137,6 +141,7 @@ data class EventScript(val steps: List<Step>) {
             is Step.IfMoney -> all(s.then) + all(s.otherwise)
             is Step.IfHasPokemon -> all(s.then) + all(s.otherwise)
             is Step.IfChance -> all(s.then) + all(s.otherwise)
+            is Step.IfGameEvent -> all(s.then) + all(s.otherwise)
             is Step.GiveItem -> all(s.ifBagFull)
             is Step.GivePokemon -> all(s.ifNoRoom)
             else -> emptyList()
@@ -153,6 +158,7 @@ data class EventScript(val steps: List<Step>) {
             is Step.IfMoney -> walks(s.then) || walks(s.otherwise)
             is Step.IfHasPokemon -> walks(s.then) || walks(s.otherwise)
             is Step.IfChance -> walks(s.then) || walks(s.otherwise)
+            is Step.IfGameEvent -> walks(s.then) || walks(s.otherwise)
             is Step.GiveItem -> walks(s.ifBagFull)
             is Step.GivePokemon -> walks(s.ifNoRoom)
             else -> false
@@ -276,6 +282,8 @@ object ScriptCodec {
             is Step.IfHasPokemon -> { sb.append("ifmon ${s.species}"); block(s.then, sb); block(s.otherwise, sb) }
             is Step.IfChance -> { sb.append("chance ${s.percent}"); block(s.then, sb); block(s.otherwise, sb) }
             Step.End -> sb.append("end")
+            is Step.IfGameEvent -> { sb.append("ifevent ${s.event}"); block(s.then, sb); block(s.otherwise, sb) }
+            is Step.SetGameEvent -> sb.append("event ${s.event} ${if (s.value) 1 else 0}")
         }
         sb.append(';')
     }
@@ -348,6 +356,8 @@ object ScriptCodec {
                     "ifmon" -> Step.IfHasPokemon(int(), block(), block())
                     "chance" -> Step.IfChance(int(), block(), block())
                     "end" -> Step.End
+                    "ifevent" -> Step.IfGameEvent(int(), block(), block())
+                    "event" -> Step.SetGameEvent(int(), int() != 0)
                     else -> throw IllegalArgumentException("Unknown step '$w'")
                 }
                 ws(); if (i < s.length && s[i] == ';') i++
