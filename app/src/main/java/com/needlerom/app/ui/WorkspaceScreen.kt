@@ -80,7 +80,7 @@ fun WorkspaceScreen(state: AppState, files: Files, tab: Tab) {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
                         selected = t == tab,
-                        onClick = { if (t == Tab.PLAY) state.go(Route.Playtest) else state.replace(Route.Workspace(t)) },
+                        onClick = { if (t == Tab.PLAY) state.go(Route.Playtest()) else state.replace(Route.Workspace(t)) },
                         icon = { Icon(tabIcon(t), null) },
                         label = { Text(t.label) },
                     )

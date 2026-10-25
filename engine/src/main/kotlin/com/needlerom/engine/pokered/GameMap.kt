@@ -295,6 +295,10 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
         writeEvents(e, "Move sign in ${info.name}", true)
     }
 
+    /** The 8-byte special warp spec (as in NewGameWarp) that puts the player at (x, y) here. */
+    fun startSpec(x: Int, y: Int): ByteArray =
+        byteArrayOf(id.toByte()) + warpTo(x, y) + byteArrayOf((y and 1).toByte(), (x and 1).toByte(), tilesetId.toByte())
+
     private fun warpTo(x: Int, y: Int): ByteArray {
         val disp = g.sym("wOverworldMap") + 7 + width + (width + 6) * (y shr 1) + (x shr 1)
         return byteArrayOf(disp.toByte(), (disp shr 8).toByte(), y.toByte(), x.toByte())

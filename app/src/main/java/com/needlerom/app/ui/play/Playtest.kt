@@ -12,8 +12,11 @@ import java.io.File
  * Runs a [GameBoy] on its own thread at ~59.7 fps, publishing frames as bitmaps and
  * streaming sound to an [AudioTrack].
  */
-class Playtest(rom: ByteArray, private val saveFile: File) {
+class Playtest(rom: ByteArray, private val saveFile: File, private val prepare: ((gb: GameBoy, cancelled: () -> Boolean) -> Unit)? = null) {
     val gb = GameBoy(rom, savedRam = saveFile.takeIf { it.exists() }?.readBytes())
+
+    /** True while [prepare] (e.g. skipping the intro) runs before play starts. */
+    @Volatile var preparing = prepare != null
 
     @Volatile var buttons = 0
     @Volatile var fastForward = false
@@ -60,15 +63,20 @@ class Playtest(rom: ByteArray, private val saveFile: File) {
     }
 
     fun saveBattery() {
+        if (preparing) return
         if (gb.cart.ram.isNotEmpty() && gb.cart.ramDirty) {
             synchronized(gb) { saveFile.writeBytes(gb.saveRam.copyOf()); gb.cart.ramDirty = false }
         }
     }
 
-    fun saveState(f: File) = synchronized(gb) { f.writeBytes(gb.saveState()) }
-    fun loadState(f: File) = synchronized(gb) { gb.loadState(f.readBytes()) }
+    fun saveState(f: File) { if (!preparing) synchronized(gb) { f.writeBytes(gb.saveState()) } }
+    fun loadState(f: File) { if (!preparing) synchronized(gb) { gb.loadState(f.readBytes()) } }
 
     private fun loop() {
+        prepare?.let { p ->
+            synchronized(gb) { gb.bus.apu.muted = true; p(gb) { !running }; gb.bus.apu.drain(ShortArray(65536)) }
+            preparing = false
+        }
         val frameNs = 16_742_706L // 1 / 59.73 Hz
         val samples = ShortArray(8192)
         var next = System.nanoTime()

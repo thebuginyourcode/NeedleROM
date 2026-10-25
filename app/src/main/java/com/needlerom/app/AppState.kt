@@ -31,7 +31,8 @@ sealed interface Route {
     data class PokemonEditor(val dex: Int) : Route
     data class TrainerEditor(val trainerClass: Int) : Route
     data class WildEditor(val mapId: Int) : Route
-    data object Playtest : Route
+    /** [start] = (map, x, y) starts a fresh game there instead of booting normally. */
+    data class Playtest(val start: Triple<Int, Int, Int>? = null) : Route
 }
 
 enum class Tab(val label: String) { WORLD("World"), EVENTS("Events"), DATA("Data"), PLAY("Play") }

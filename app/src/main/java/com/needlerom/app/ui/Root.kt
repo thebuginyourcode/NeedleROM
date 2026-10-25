@@ -65,7 +65,7 @@ fun Root(state: AppState, onExit: () -> Unit) {
             is Route.PokemonEditor -> PokemonEditorScreen(state, r.dex)
             is Route.TrainerEditor -> TrainerEditorScreen(state, r.trainerClass)
             is Route.WildEditor -> WildEditorScreen(state, r.mapId)
-            Route.Playtest -> PlaytestScreen(state)
+            is Route.Playtest -> PlaytestScreen(state, r.start)
         }
         if (state.busy) {
             Box(Modifier.fillMaxSize().background(Color(0x88000000)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

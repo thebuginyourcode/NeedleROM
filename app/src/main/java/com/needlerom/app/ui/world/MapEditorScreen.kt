@@ -151,6 +151,10 @@ fun MapEditorScreen(state: AppState, mapId: Int) {
                 navigationIcon = { IconButton(onClick = { state.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     TextButton(onClick = { state.undo() }, enabled = game.rom.canUndo) { Text("Undo") }
+                    TextButton(onClick = {
+                        val (x, y) = startStepNear(map, st.centerStep(map))
+                        state.go(com.needlerom.app.Route.Playtest(Triple(mapId, x, y)))
+                    }) { Text("▶ Here") }
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Options") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -236,6 +240,16 @@ fun MapEditorScreen(state: AppState, mapId: Int) {
 @Composable
 private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     DropdownMenuItem(text = { Text(label) }, leadingIcon = { Checkbox(checked = checked, onCheckedChange = null) }, onClick = { onChange(!checked) })
+}
+
+/** A walkable, empty step near [start], for "Playtest from here". */
+private fun startStepNear(map: GameMap, start: Pair<Int, Int>): Pair<Int, Int> {
+    for (r in 0..12) for (dy in -r..r) for (dx in -r..r) {
+        val x = start.first + dx; val y = start.second + dy
+        if (x !in 0 until map.stepWidth || y !in 0 until map.stepHeight) continue
+        if (map.isWalkable(x, y) && map.npcAt(x, y) == null && map.warpAt(x, y) == null && map.signAt(x, y) == null) return x to y
+    }
+    return freeStepNear(map, start)
 }
 
 private fun freeStepNear(map: GameMap, start: Pair<Int, Int>): Pair<Int, Int> {

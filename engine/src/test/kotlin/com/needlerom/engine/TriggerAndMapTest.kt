@@ -101,3 +101,16 @@ class TriggerAndMapTest {
         assertEquals(id, gb.read(g.sym("wCurMap")), "entered the new map")
     }
 }
+
+class QuickStartTest {
+    @Test
+    fun startsANewGameOnAnyTile() {
+        val bytes = TestRoms.bytes("pokered.gbc") ?: return
+        val g = PokeRed(Rom(bytes))
+        val viridian = 0x01
+        val gb = GameBoy(com.needlerom.engine.pokered.QuickStart.rom(g, viridian, 21, 10))
+        assertTrue(com.needlerom.engine.pokered.QuickStart.skipIntro(gb, g, viridian, 21, 10), "reached the start tile")
+        TestRoms.screenshot(gb, "quickstart_viridian")
+        assertEquals(viridian, gb.read(g.sym("wCurMap")))
+    }
+}

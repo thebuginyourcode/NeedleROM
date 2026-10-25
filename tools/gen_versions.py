@@ -19,7 +19,7 @@ SYMBOLS = [
     "MapHeaderPointers", "MapHeaderBanks", "Tilesets", "SpriteSheetPointerTable",
     "ItemNames", "ItemPrices", "MonsterNames", "BaseStats", "MewBaseStats",
     "TrainerDataPointers", "TrainerNames", "WildDataPointers", "EvosMovesPointerTable",
-    "MoveNames", "Moves", "PokedexOrder", "TypeNames", "Overworld_Coll", "MapSongBanks",
+    "MoveNames", "Moves", "PokedexOrder", "TypeNames", "Overworld_Coll", "MapSongBanks", "NewGameWarp",
     # home routines used by the script engine
     "TextScriptEnd", "Bankswitch", "PrintText", "GiveItem", "GivePokemon", "YesNoChoice",
     "IsItemInBag", "Predef", "PlaySound", "WaitForSoundToFinish", "DelayFrames",

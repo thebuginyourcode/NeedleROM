@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,16 +47,26 @@ import androidx.compose.ui.unit.dp
 import com.needlerom.app.AppState
 import com.needlerom.app.ui.Screen
 import com.needlerom.engine.gb.Button
+import com.needlerom.engine.pokered.QuickStart
+import kotlinx.coroutines.delay
 
 @Composable
-fun PlaytestScreen(state: AppState) {
+fun PlaytestScreen(state: AppState, start: Triple<Int, Int, Int>? = null) {
     val game = state.game ?: return
     val project = state.project ?: return
     var session by remember { mutableIntStateOf(0) } // bump to restart with the latest edits
     val play = remember(session) {
         state.saveNow()
-        Playtest(game.rom.data.copyOf(), project.saveFile)
+        if (start == null) Playtest(game.rom.data.copyOf(), project.saveFile)
+        else {
+            // A fresh game that begins on the chosen tile; it never touches the real playtest save.
+            val (map, x, y) = start
+            val sav = java.io.File(project.saveFile.parentFile, "quick.sav").apply { delete() }
+            Playtest(QuickStart.rom(game, map, x, y), sav) { gb, cancelled -> QuickStart.skipIntro(gb, game, map, x, y, cancelled) }
+        }
     }
+    var preparing by remember(play) { mutableStateOf(play.preparing) }
+    LaunchedEffect(play) { while (play.preparing) delay(100); preparing = false }
     var frame by remember { mutableStateOf<ImageBitmap?>(null) }
     var fast by remember { mutableStateOf(false) }
     var sound by remember { mutableStateOf(true) }
@@ -77,7 +88,8 @@ fun PlaytestScreen(state: AppState) {
     ) {
         Column(Modifier.fillMaxSize().background(Color(0xFF1B1A20)).navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth().padding(12.dp).aspectRatio(160f / 144f).background(Color(0xFFE0F8D0), RoundedCornerShape(6.dp))) {
-                frame?.let {
+                if (preparing) Text("Skipping the intro…", Modifier.align(Alignment.Center), color = Color(0xFF346856))
+                else frame?.let {
                     Image(it, "Game screen", Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
                 }
             }
