@@ -54,6 +54,10 @@ import com.needlerom.engine.pokered.PokeRed
 import com.needlerom.engine.script.EventScript
 import com.needlerom.engine.script.Flags
 import com.needlerom.engine.script.Step
+import com.needlerom.engine.script.Dir
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
 import com.needlerom.engine.script.Templates
 
 /** Names and pickers shared by the step editors. */
@@ -66,6 +70,10 @@ private class Ctx(val game: PokeRed, val flagNames: Map<Int, String>, val npcs: 
     fun flag(n: Int) = flagNames[n]?.takeIf { it.isNotBlank() }?.let { "$it (flag $n)" } ?: "Flag $n"
     fun trainer(c: Int) = game.trainerClassNames.getOrElse(c) { "Class $c" }
     val sounds = com.needlerom.engine.script.ScriptEngine.sounds(game)
+    var mapName: (Int) -> String = { game.mapName(it) }
+    val maps = game.world.maps.map { it.id }
+    fun badge(b: Int) = BADGES.getOrElse(b) { "Badge $b" } + " Badge"
+    fun who(w: Int) = if (w < 0) "The player" else npc(w)
     fun sound(id: Int) = sounds.effects.firstOrNull { it.first == id }?.second ?: "Sound $id"
     fun music(id: Int, bank: Int) = sounds.music.firstOrNull { it.first == id && it.second == bank }?.third ?: "Track $id"
 }
@@ -78,7 +86,7 @@ fun ScriptEditorScreen(state: AppState, r: Route.ScriptEditor) {
     var steps by remember(r) { mutableStateOf(saved.steps) }
     val dirty = steps != saved.steps
     val isTrigger = remember(map, r.textId) { map.triggers.any { it.textId == r.textId } }
-    val ctx = remember(game, state.project, map) { Ctx(game, state.project?.flagNames ?: emptyMap(), map.npcs, isTrigger, map.stepWidth, map.stepHeight) }
+    val ctx = remember(game, state.project, map) { Ctx(game, state.project?.flagNames ?: emptyMap(), map.npcs, isTrigger, map.stepWidth, map.stepHeight).also { it.mapName = state::mapName } }
     var templates by remember { mutableStateOf(false) }
 
     Screen(
@@ -134,6 +142,10 @@ private fun usedFlags(steps: List<Step>): Set<Int> = steps.flatMap { s ->
         is Step.IfFlag -> listOf(s.flag) + usedFlags(s.then) + usedFlags(s.otherwise)
         is Step.Ask -> usedFlags(s.yes) + usedFlags(s.no)
         is Step.IfHasItem -> usedFlags(s.then) + usedFlags(s.otherwise)
+        is Step.IfBadge -> usedFlags(s.then) + usedFlags(s.otherwise)
+        is Step.IfMoney -> usedFlags(s.then) + usedFlags(s.otherwise)
+        is Step.IfHasPokemon -> usedFlags(s.then) + usedFlags(s.otherwise)
+        is Step.IfChance -> usedFlags(s.then) + usedFlags(s.otherwise)
         is Step.GiveItem -> usedFlags(s.ifBagFull)
         is Step.GivePokemon -> usedFlags(s.ifNoRoom)
         else -> emptyList()
@@ -196,6 +208,22 @@ private fun StepCard(ctx: Ctx, step: Step, depth: Int, onChange: (Step?) -> Unit
                     Branch("If set") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
                     Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
                 }
+                is Step.IfBadge -> {
+                    Branch("If they have it") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
+                    Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
+                }
+                is Step.IfMoney -> {
+                    Branch("If they have enough") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
+                    Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
+                }
+                is Step.IfHasPokemon -> {
+                    Branch("If it's in the party") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
+                    Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
+                }
+                is Step.IfChance -> {
+                    Branch("${step.percent}% of the time") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
+                    Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
+                }
                 is Step.IfHasItem -> {
                     Branch("If they have it") { StepList(ctx, step.then, depth + 1) { onChange(step.copy(then = it)) } }
                     Branch("Otherwise") { StepList(ctx, step.otherwise, depth + 1) { onChange(step.copy(otherwise = it)) } }
@@ -240,6 +268,22 @@ private fun title(c: Ctx, s: Step): String = when (s) {
     is Step.PlayMusic -> "Change music: ${c.music(s.music, s.bank)}"
     is Step.WalkToPlayer -> "${c.npc(s.npc)} walks up to the player"
     is Step.Lead -> "${c.npc(s.npc)} says follow me, to (${s.x}, ${s.y})"
+    is Step.HideNpc -> "Hide ${c.npc(s.npc)}"
+    is Step.ShowNpc -> "Show ${c.npc(s.npc)}"
+    is Step.Face -> "${c.who(s.who)} faces ${s.dir.name.lowercase()}"
+    is Step.MoveNpc -> "${c.npc(s.npc)} walks ${pathText(s.path)}"
+    is Step.MovePlayer -> "The player walks ${pathText(s.path)}"
+    is Step.Wait -> "Wait %.1f s".format(s.frames / 60f)
+    Step.FadeOut -> "Fade to black"
+    Step.FadeIn -> "Fade back in"
+    is Step.Warp -> "Warp to ${c.mapName(s.map)} (door ${s.door})"
+    is Step.GiveBadge -> "Give the ${c.badge(s.badge)}"
+    is Step.IfBadge -> "If player has the ${c.badge(s.badge)}"
+    is Step.TakeMoney -> "Take ¥${s.amount}"
+    is Step.IfMoney -> "If player has ¥${s.amount} or more"
+    is Step.IfHasPokemon -> "If ${c.mon(s.species)} is in the party"
+    is Step.IfChance -> "Random: ${s.percent}% chance"
+    Step.End -> "End the event"
 }
 
 private fun detail(c: Ctx, s: Step): String? = when (s) {
@@ -250,7 +294,30 @@ private fun detail(c: Ctx, s: Step): String? = when (s) {
     else -> null
 }
 
-private fun hasEditor(s: Step) = s != Step.Heal
+private fun hasEditor(s: Step) = s != Step.Heal && s != Step.FadeOut && s != Step.FadeIn && s != Step.End
+
+private val BADGES = listOf("Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh", "Volcano", "Earth")
+
+private fun arrow(d: Dir) = when (d) { Dir.UP -> "↑"; Dir.DOWN -> "↓"; Dir.LEFT -> "←"; Dir.RIGHT -> "→" }
+
+private fun pathText(path: List<Dir>) = if (path.isEmpty()) "(no steps)" else path.joinToString("") { arrow(it) }
+
+/** Builds a walking path from arrow buttons. */
+@Composable
+private fun PathEditor(path: List<Dir>, onChange: (List<Dir>) -> Unit) {
+    Text(if (path.isEmpty()) "No steps yet" else pathText(path), style = MaterialTheme.typography.titleMedium)
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf(Dir.UP, Dir.DOWN, Dir.LEFT, Dir.RIGHT).forEach { d ->
+            OutlinedButton(onClick = { if (path.size < 50) onChange(path + d) }, contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(48.dp)) { Text(arrow(d), style = MaterialTheme.typography.titleLarge) }
+        }
+    }
+    Row {
+        TextButton(onClick = { onChange(path.dropLast(1)) }, enabled = path.isNotEmpty()) { Text("Remove last") }
+        TextButton(onClick = { onChange(emptyList()) }, enabled = path.isNotEmpty()) { Text("Clear") }
+    }
+    Hint("One arrow per step. They walk through anything in the way, so plan a clear route.")
+}
 
 @Composable
 private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit) {
@@ -265,10 +332,16 @@ private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit
             "Take item" to { Step.TakeItem(4) },
             "Give Pokémon" to { Step.GivePokemon(ctx.species.first(), 5) },
             "Give money" to { Step.GiveMoney(500) },
+            "Take money" to { Step.TakeMoney(500) },
+            "Give a badge" to { Step.GiveBadge(0) },
             "Heal the party" to { Step.Heal },
         ),
         "Conditions & flags" to listOf(
             "If player has item" to { Step.IfHasItem(4, emptyList(), emptyList()) },
+            "If player has a badge" to { Step.IfBadge(0, emptyList(), emptyList()) },
+            "If player has enough money" to { Step.IfMoney(1000, emptyList(), emptyList()) },
+            "If a Pokémon is in the party" to { Step.IfHasPokemon(ctx.species.first(), emptyList(), emptyList()) },
+            "Random chance" to { Step.IfChance(50, emptyList(), emptyList()) },
             "If flag is set" to { Step.IfFlag(0, emptyList(), emptyList()) },
             "Set flag" to { Step.SetFlag(0) },
             "Clear flag" to { Step.ClearFlag(0) },
@@ -277,9 +350,24 @@ private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit
             "Wild battle" to { Step.WildBattle(ctx.species.first(), 5) },
             "Trainer battle" to { Step.TrainerBattle(1, 1) },
         ),
-        "Movement" to if (ctx.npcs.isEmpty()) emptyList() else listOf(
+        "NPCs" to if (ctx.npcs.isEmpty()) emptyList() else listOf(
+            "Hide an NPC" to { Step.HideNpc(lastNpc) },
+            "Show an NPC" to { Step.ShowNpc(lastNpc) },
+            "NPC faces a direction" to { Step.Face(lastNpc, Dir.DOWN) },
+            "NPC walks a path" to { Step.MoveNpc(lastNpc, listOf(Dir.DOWN)) },
             "NPC walks up to the player" to { Step.WalkToPlayer(lastNpc) },
             "Follow me (NPC leads the player)" to { Step.Lead(lastNpc, ctx.npcs[lastNpc].x, (ctx.npcs[lastNpc].y - 3).coerceAtLeast(0)) },
+        ),
+        "Player" to listOf(
+            "Player faces a direction" to { Step.Face(-1, Dir.UP) },
+            "Player walks a path" to { Step.MovePlayer(listOf(Dir.UP)) },
+            "Warp to a map" to { Step.Warp(ctx.maps.first(), 1) },
+        ),
+        "Screen & timing" to listOf(
+            "Wait" to { Step.Wait(60) },
+            "Fade to black" to { Step.FadeOut },
+            "Fade back in" to { Step.FadeIn },
+            "End the event here" to { Step.End },
         ),
         "Sound" to listOf(
             "Play sound effect" to { Step.PlaySound(ctx.sounds.effects.first().first) },
@@ -299,7 +387,7 @@ private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit
                         Text(label, Modifier.fillMaxWidth().clickable { onAdd(make()) }.padding(vertical = 9.dp, horizontal = 4.dp))
                     }
                 }
-                if (ctx.npcs.isEmpty()) Hint("Add an NPC to this map to use movement steps.", Modifier.padding(top = 8.dp))
+                if (ctx.npcs.isEmpty()) Hint("Add an NPC to this map to use NPC steps.", Modifier.padding(top = 8.dp))
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -312,7 +400,10 @@ private fun categoryColor(s: Step): Color = when (s) {
     is Step.GiveItem, is Step.TakeItem, is Step.GivePokemon, is Step.GiveMoney, Step.Heal -> Color(0xFF8EE08A)
     is Step.IfHasItem, is Step.IfFlag, is Step.SetFlag, is Step.ClearFlag -> Color(0xFFFFB454)
     is Step.WildBattle, is Step.TrainerBattle -> Color(0xFFFF7A7A)
-    is Step.WalkToPlayer, is Step.Lead -> Color(0xFFC792EA)
+    is Step.WalkToPlayer, is Step.Lead, is Step.HideNpc, is Step.ShowNpc, is Step.Face, is Step.MoveNpc, is Step.MovePlayer, is Step.Warp -> Color(0xFFC792EA)
+    is Step.Wait, Step.FadeOut, Step.FadeIn, Step.End -> Color(0xFFA9B2BD)
+    is Step.GiveBadge, is Step.TakeMoney -> Color(0xFF8EE08A)
+    is Step.IfBadge, is Step.IfMoney, is Step.IfHasPokemon, is Step.IfChance -> Color(0xFFFFB454)
     is Step.PlaySound, is Step.PlayCry, is Step.PlayMusic -> Color(0xFF5FD7C8)
 }
 
@@ -390,6 +481,44 @@ private fun StepDialog(ctx: Ctx, step: Step, onDismiss: () -> Unit, onSave: (Ste
                             "They go in straight lines (through anything in the way), so pick a clear route. Coordinates are shown in the map's Inspector when you select something.")
                     }
                     is Step.GiveMoney -> NumberField("Amount (¥)", v.amount, Modifier.fillMaxWidth(), 0..999999) { s = v.copy(amount = it) }
+                    is Step.TakeMoney -> {
+                        NumberField("Amount (¥)", v.amount, Modifier.fillMaxWidth(), 0..999999) { s = v.copy(amount = it) }
+                        Hint("If they have less, they're left with ¥0. Check first with \"If player has enough money\".")
+                    }
+                    is Step.IfMoney -> NumberField("At least (¥)", v.amount, Modifier.fillMaxWidth(), 0..999999) { s = v.copy(amount = it) }
+                    is Step.HideNpc -> {
+                        Chooser("Who", ctx.npc(v.npc), ctx.npcs.indices.toList(), ctx::npc, Modifier.fillMaxWidth()) { s = v.copy(npc = it) }
+                        Hint("They stay hidden (also after saving) until an event shows them again.")
+                    }
+                    is Step.ShowNpc -> {
+                        Chooser("Who", ctx.npc(v.npc), ctx.npcs.indices.toList(), ctx::npc, Modifier.fillMaxWidth()) { s = v.copy(npc = it) }
+                        Hint("To have someone appear later, select them on the map and turn on \"Hidden until shown\".")
+                    }
+                    is Step.Face -> {
+                        Chooser("Who", ctx.who(v.who), listOf(-1) + ctx.npcs.indices, ctx::who, Modifier.fillMaxWidth()) { s = v.copy(who = it) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Dir.entries.forEach { d -> FilterChip(v.dir == d, { s = v.copy(dir = d) }, label = { Text(arrow(d) + " " + d.name.lowercase()) }) }
+                        }
+                    }
+                    is Step.MoveNpc -> {
+                        Chooser("Who", ctx.npc(v.npc), ctx.npcs.indices.toList(), ctx::npc, Modifier.fillMaxWidth()) { s = v.copy(npc = it) }
+                        PathEditor(v.path) { s = v.copy(path = it) }
+                    }
+                    is Step.MovePlayer -> PathEditor(v.path) { s = v.copy(path = it) }
+                    is Step.Wait -> {
+                        NumberField("Frames (60 = 1 second)", v.frames, Modifier.fillMaxWidth(), 1..255) { s = v.copy(frames = it) }
+                    }
+                    is Step.Warp -> {
+                        Chooser("Map", ctx.mapName(v.map), ctx.maps, ctx.mapName, Modifier.fillMaxWidth()) { s = v.copy(map = it) }
+                        NumberField("Arrive at door #", v.door, Modifier.fillMaxWidth(), 1..32) { s = v.copy(door = it) }
+                        Hint("The warp happens when the event ends; steps after it don't run.")
+                    }
+                    is Step.GiveBadge -> Chooser("Badge", ctx.badge(v.badge), (0..7).toList(), ctx::badge, Modifier.fillMaxWidth()) { s = v.copy(badge = it) }
+                    is Step.IfBadge -> Chooser("Badge", ctx.badge(v.badge), (0..7).toList(), ctx::badge, Modifier.fillMaxWidth()) { s = v.copy(badge = it) }
+                    is Step.IfHasPokemon -> Chooser("Pokémon", ctx.mon(v.species), ctx.species, ctx::mon, Modifier.fillMaxWidth()) { s = v.copy(species = it) }
+                    is Step.IfChance -> {
+                        NumberField("Chance (%)", v.percent, Modifier.fillMaxWidth(), 0..100) { s = v.copy(percent = it) }
+                    }
                     is Step.PlaySound -> {
                         Chooser("Sound effect", ctx.sound(v.sound), ctx.sounds.effects, { it.second }, Modifier.fillMaxWidth()) { s = v.copy(sound = it.first) }
                         Hint("Every sound effect the game can play outside battle.")

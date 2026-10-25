@@ -89,6 +89,7 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                     }
                     NpcKind.PERSON -> BehaviorEditor(state, game, map, n.textId, isNpc = true, npcIndex = n.index)
                 }
+                NpcVisibilityEditor(state, map, n)
                 if (n.index >= map.firstAddedNpc) {
                     TextButton(onClick = { if (state.edit("NPC removed") { map.removeNpc(n) }) st.selection = null }) {
                         Text("Delete NPC", color = MaterialTheme.colorScheme.error)
@@ -168,6 +169,22 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
         if (n == null) pickingSprite = false
         else SpritePicker(game, map, gfx, n.sprite, onDismiss = { pickingSprite = false }) { sprite -> state.edit { map.setSprite(n, sprite) }; pickingSprite = false }
     }
+}
+
+/** Whether events can show and hide this NPC, and whether it starts hidden. */
+@Composable
+private fun NpcVisibilityEditor(state: AppState, map: GameMap, n: com.needlerom.engine.pokered.Npc) {
+    val vis = map.npcVisibility(n)
+    Text("Visibility", fontWeight = FontWeight.SemiBold)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Checkbox(vis != null, { on -> state.edit(if (on) "Events can now show and hide this NPC" else null) { map.setNpcVisibility(n, on, false) } })
+        Text("Events can show / hide them", style = MaterialTheme.typography.bodySmall)
+    }
+    if (vis != null) Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Checkbox(vis.startHidden, { on -> state.edit { map.setNpcVisibility(n, true, on) } })
+        Text("Hidden until an event shows them", style = MaterialTheme.typography.bodySmall)
+    }
+    if (vis != null) Hint("Use the Show / Hide NPC steps in any event on this map. Remembered with flag ${vis.flag}.")
 }
 
 /** What an NPC/sign does: talk, shop, nurse, PC or an event script. */
