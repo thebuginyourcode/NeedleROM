@@ -5,6 +5,9 @@ import java.io.DataOutputStream
 
 /** DIV/TIMA/TMA/TAC. TIMA ticks on the falling edge of a bit of the 16-bit internal counter. */
 class Timer(private val requestInterrupt: (Int) -> Unit) {
+    /** Called on each falling edge of DIV bit 4 (counter bit 12): the APU's frame sequencer. */
+    var onFrameSequencer: () -> Unit = {}
+
     private var counter = 0
     var tima = 0; private set
     var tma = 0; private set
@@ -28,14 +31,17 @@ class Timer(private val requestInterrupt: (Int) -> Unit) {
         var left = cycles
         while (left > 0) {
             val before = signal(counter)
+            val old = counter
             counter = (counter + 4) and 0xFFFF
             if (before && !signal(counter)) incrementTima()
+            if (old and 0x1000 != 0 && counter and 0x1000 == 0) onFrameSequencer()
             left -= 4
         }
     }
 
     fun writeDiv() {
         if (signal(counter)) incrementTima()
+        if (counter and 0x1000 != 0) onFrameSequencer()
         counter = 0
     }
 

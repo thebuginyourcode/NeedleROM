@@ -22,7 +22,7 @@ class Bus(val cart: Cartridge, val apu: Apu = Apu()) {
     var ie = 0
     var iflag = 0xE1
 
-    val timer = Timer(::request)
+    val timer = Timer(::request).also { it.onFrameSequencer = apu::frameSequencerStep }
     val ppu = Ppu(::request)
 
     /** Currently held buttons (Button.* bits). */
