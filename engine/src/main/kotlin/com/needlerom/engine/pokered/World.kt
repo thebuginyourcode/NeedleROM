@@ -112,6 +112,16 @@ class World internal constructor(val game: PokeRed) {
         rom.write(song + to * 2, rom.slice(song + from * 2, 2), "Music of ${game.mapName(to)}")
     }
 
+    /** The map's music as (music id, audio bank). */
+    fun music(id: Int): Pair<Int, Int> {
+        val o = game.sym("MapSongBanks") + id * 2
+        return rom.u8(o) to rom.u8(o + 1)
+    }
+
+    fun setMusic(id: Int, music: Int, bank: Int) {
+        rom.write(game.sym("MapSongBanks") + id * 2, byteArrayOf(music.toByte(), bank.toByte()), "Music of ${game.mapName(id)}")
+    }
+
     fun mapInfo(id: Int): MapInfo? = maps.firstOrNull { it.id == id }
 
     internal fun headerOffset(id: Int): Int? {

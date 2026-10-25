@@ -21,12 +21,6 @@ import androidx.compose.ui.unit.dp
 import com.needlerom.app.AppState
 import com.needlerom.app.ExportKind
 import com.needlerom.app.Route
-import com.needlerom.app.ui.data.PokemonEditorScreen
-import com.needlerom.app.ui.data.TrainerEditorScreen
-import com.needlerom.app.ui.data.WildEditorScreen
-import com.needlerom.app.ui.play.PlaytestScreen
-import com.needlerom.app.ui.script.ScriptEditorScreen
-import com.needlerom.app.ui.world.MapEditorScreen
 
 /** File pickers, created once at the root so any screen can use them. */
 class Files(val openRom: () -> Unit, val export: (ExportKind) -> Unit)
@@ -57,15 +51,9 @@ fun Root(state: AppState, onExit: () -> Unit) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        when (val r = state.route) {
+        when (state.route) {
             Route.Home -> HomeScreen(state, files)
-            is Route.Workspace -> WorkspaceScreen(state, files, r.tab)
-            is Route.MapEditor -> MapEditorScreen(state, r.mapId)
-            is Route.ScriptEditor -> ScriptEditorScreen(state, r)
-            is Route.PokemonEditor -> PokemonEditorScreen(state, r.dex)
-            is Route.TrainerEditor -> TrainerEditorScreen(state, r.trainerClass)
-            is Route.WildEditor -> WildEditorScreen(state, r.mapId)
-            is Route.Playtest -> PlaytestScreen(state, r.start)
+            else -> StudioScreen(state, files)
         }
         if (state.busy) {
             Box(Modifier.fillMaxSize().background(Color(0x88000000)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

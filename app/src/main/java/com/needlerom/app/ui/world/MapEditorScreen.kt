@@ -23,8 +23,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -72,13 +70,23 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.needlerom.app.AppState
+import com.needlerom.app.ui.Chooser
+import com.needlerom.app.ui.Hint
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.font.FontWeight
 import com.needlerom.app.ui.toImage
 import com.needlerom.engine.pokered.GameMap
 import com.needlerom.engine.pokered.World
 import kotlin.math.ceil
 import kotlin.math.floor
 
-enum class Tool(val label: String) { MOVE("Move"), PAINT("Paint"), FILL("Fill"), PICK("Pick"), EVENTS("NPCs & events") }
+enum class Tool(val label: String, val short: String) { MOVE("Move", "✥ Move"), PAINT("Paint", "✎ Paint"), FILL("Fill", "▨ Fill"), PICK("Pick", "⌖ Pick"), EVENTS("Objects", "◉ Objects") }
 
 sealed interface Selection {
     data class Npc(val index: Int) : Selection
@@ -99,6 +107,8 @@ class EditorState {
     var showCollision by mutableStateOf(false)
     var tick by mutableIntStateOf(0)
     var dragTo by mutableStateOf<Pair<Int, Int>?>(null)
+    /** Which add dialog is open ("npc", "sign", "door", "trigger"). */
+    var adding by mutableStateOf<String?>(null)
 
     fun fit(map: GameMap) {
         if (viewport.width <= 0) return
@@ -115,6 +125,9 @@ class EditorState {
     }
 }
 
+/** The editing state of a map, kept while its tab (or the studio) is open. */
+fun AppState.editor(mapId: Int): EditorState = editors.getOrPut(mapId) { EditorState() }
+
 internal const val BLOCK = 32f
 internal const val STEP = 16f
 
@@ -127,123 +140,174 @@ class GfxCache(private val world: World) {
     fun sprite(id: Int): ImageBitmap? = sprites.getOrPut(id) { world.spriteImage(id)?.toImage(16, 16) }
 }
 
+/** The map canvas (center of the studio), plus the dialogs started from the inspector. */
 @Composable
-fun MapEditorScreen(state: AppState, mapId: Int) {
+fun MapView(state: AppState, mapId: Int, gfx: GfxCache) {
     val game = state.game ?: return
     val rev = state.revision
     val map = remember(mapId, rev) { game.world.map(mapId) }
-    val st = remember(mapId) { EditorState() }
-    val gfx = remember(game) { GfxCache(game.world) }
+    val st = state.editor(mapId)
     val mapState = rememberUpdatedState(map)
-    var menu by remember { mutableStateOf(false) }
-    var adding by remember { mutableStateOf<String?>(null) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(state.mapName(mapId), maxLines = 1)
-                        Text("${map.npcs.size} NPCs · ${map.signs.size} signs · ${map.warps.size} doors",
-                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                navigationIcon = { IconButton(onClick = { state.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                actions = {
-                    TextButton(onClick = { state.undo() }, enabled = game.rom.canUndo) { Text("Undo") }
-                    TextButton(onClick = {
-                        val (x, y) = startStepNear(map, st.centerStep(map))
-                        state.go(com.needlerom.app.Route.Playtest(Triple(mapId, x, y)))
-                    }) { Text("▶ Here") }
-                    Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Options") }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            Toggle("Grid", st.showGrid) { st.showGrid = it }
-                            Toggle("Show blocked tiles", st.showCollision) { st.showCollision = it }
-                            DropdownMenuItem(text = { Text("Use selected block as border") }, enabled = map.eventsValid,
-                                onClick = { menu = false; state.edit("Border block set") { map.setBorderBlock(st.block) } })
-                            DropdownMenuItem(text = { Text("Fit map to screen") }, onClick = { menu = false; st.fit(map) })
-                            map.connections.forEach { (dir, target) ->
-                                DropdownMenuItem(text = { Text("Go $dir: ${state.mapName(target)}") },
-                                    onClick = { menu = false; state.replace(com.needlerom.app.Route.MapEditor(target)) })
-                            }
-                        }
-                    }
-                },
-            )
-        },
-    ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad)) {
-            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().background(Color(0xFF09080C))) {
-                MapCanvas(state, st, gfx, mapState)
-                if (!map.eventsValid) {
-                    Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.padding(8.dp)) {
-                        Text("This map's event data couldn't be read; only tiles can be edited.", Modifier.padding(8.dp))
-                    }
-                }
-            }
-            Surface(tonalElevation = 3.dp) {
-                Column(Modifier.navigationBarsPadding().padding(vertical = 6.dp)) {
-                    when {
-                        st.tool == Tool.EVENTS && st.selection != null -> Inspector(state, game, map, st, gfx)
-                        st.tool == Tool.PAINT || st.tool == Tool.FILL || st.tool == Tool.PICK -> Palette(map, st, gfx)
-                        st.tool == Tool.EVENTS -> Row(Modifier.padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val whole = map.triggers.filter { it.x == null }
-                            if (whole.isNotEmpty()) TextButton(onClick = { st.selection = Selection.Trigger(whole.first().textId) }) { Text("Map trigger") }
-                            FilledTonalButton(onClick = { adding = "npc" }, enabled = map.canAddNpc, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ NPC") }
-                            FilledTonalButton(onClick = { adding = "sign" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Sign") }
-                            FilledTonalButton(onClick = { adding = "door" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Door") }
-                            FilledTonalButton(onClick = { adding = "trigger" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Trigger") }
-                        }
-                        else -> Text("Drag to look around, pinch to zoom.", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-                    }
-                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Tool.entries.forEach { t ->
-                            FilterChip(selected = st.tool == t, onClick = { st.tool = t; if (t != Tool.EVENTS) st.selection = null }, label = { Text(t.label) })
-                        }
-                    }
-                }
+    Box(Modifier.fillMaxSize().clipToBounds().background(Color(0xFF101318))) {
+        MapCanvas(state, st, gfx, mapState)
+        if (!map.eventsValid) {
+            Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.padding(8.dp)) {
+                Text("This map's event data couldn't be read; only tiles can be edited.", Modifier.padding(8.dp))
             }
         }
+        Text(
+            "${state.mapName(mapId)} · ${map.width}×${map.height} · ${st.tool.label}",
+            Modifier.align(Alignment.BottomStart).background(Color(0xAA101318)).padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall, color = Color(0xFFA9B2BD),
+        )
     }
-
-    when (adding) {
-        "npc" -> AddNpcDialog(game, map, gfx, onDismiss = { adding = null }) { sprite, movement, behavior ->
-            adding = null
+    when (st.adding) {
+        "npc" -> AddNpcDialog(game, map, gfx, onDismiss = { st.adding = null }) { sprite, movement, behavior ->
+            st.adding = null
             val (x, y) = freeStepNear(map, st.centerStep(map))
             var idx = -1
-            if (state.edit("NPC added — drag it into place") { idx = map.addNpc(sprite, x, y, movement, behavior) }) st.selection = Selection.Npc(idx)
+            if (state.edit("NPC added — drag it into place") { idx = map.addNpc(sprite, x, y, movement, behavior) }) select(st, Selection.Npc(idx))
         }
         "sign" -> {
-            adding = null
+            st.adding = null
             val (x, y) = freeStepNear(map, st.centerStep(map))
             var idx = -1
-            if (state.edit("Sign added — drag it into place") { idx = map.addSign(x, y, "A new sign!") }) st.selection = Selection.SignPost(idx)
+            if (state.edit("Sign added — drag it into place") { idx = map.addSign(x, y, "A new sign!") }) select(st, Selection.SignPost(idx))
         }
         "trigger" -> {
-            adding = null
+            st.adding = null
             val (x, y) = freeStepNear(map, st.centerStep(map))
             var tid = -1
             if (state.edit("Trigger added: when the player steps here, its event runs") {
                     tid = map.addTrigger(x, y, com.needlerom.engine.script.EventScript(listOf(com.needlerom.engine.script.Step.Say("Something happens!")))).textId
-                }) st.selection = Selection.Trigger(tid)
+                }) select(st, Selection.Trigger(tid))
         }
         "door" -> {
-            adding = null
+            st.adding = null
             val (x, y) = freeStepNear(map, st.centerStep(map))
             var idx = -1
-            if (state.edit("Door added — set where it leads") { idx = map.addWarp(x, y, 0xFF, 1) }) st.selection = Selection.Door(idx)
+            if (state.edit("Door added — set where it leads") { idx = map.addWarp(x, y, 0xFF, 1) }) select(st, Selection.Door(idx))
         }
     }
 }
 
+private fun select(st: EditorState, s: Selection) { st.tool = Tool.EVENTS; st.selection = s }
+
+/** Tool buttons for the studio toolbar. */
 @Composable
-private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    DropdownMenuItem(text = { Text(label) }, leadingIcon = { Checkbox(checked = checked, onCheckedChange = null) }, onClick = { onChange(!checked) })
+fun MapTools(state: AppState, mapId: Int) {
+    val st = state.editor(mapId)
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Tool.entries.forEach { t ->
+            val on = st.tool == t
+            Text(
+                t.short,
+                Modifier.background(if (on) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(4.dp))
+                    .clickable { st.tool = t; if (t != Tool.EVENTS) st.selection = null }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
+
+/** Inspector contents for a map: the selected object, or the map's own properties. */
+@Composable
+fun MapInspector(state: AppState, mapId: Int, gfx: GfxCache) {
+    val game = state.game ?: return
+    val rev = state.revision
+    val map = remember(mapId, rev) { game.world.map(mapId) }
+    val st = state.editor(mapId)
+    if (st.selection != null) Inspector(state, game, map, st, gfx) else MapProperties(state, map, st, gfx)
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun MapProperties(state: AppState, map: GameMap, st: EditorState, gfx: GfxCache) {
+    val game = map.world.game
+    val created = remember(map) { map.id in map.world.createdMaps() }
+    val sounds = remember(game) { com.needlerom.engine.script.ScriptEngine.sounds(game) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(state.mapName(map.id), fontWeight = FontWeight.Bold)
+        if (created) {
+            var name by remember(map.id) { mutableStateOf(state.mapName(map.id)) }
+            OutlinedTextField(name, { name = it; state.project?.let { p -> p.mapNames[map.id] = it.ifBlank { "New map" }; p.saveMeta() } },
+                Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name") })
+        }
+        Prop("Map ID", "0x" + map.id.toString(16).uppercase().padStart(2, '0'))
+        Prop("Size", "${map.width}×${map.height} blocks (${map.stepWidth}×${map.stepHeight} steps)")
+        Prop("Tileset", com.needlerom.engine.pokered.Names.TILESETS[map.tilesetId] ?: "Tileset ${map.tilesetId}")
+        Prop("Objects", "${map.npcs.size} NPCs · ${map.signs.size} signs · ${map.warps.size} doors · ${map.triggers.size} triggers")
+        val (music, bank) = remember(map) { map.world.music(map.id) }
+        Chooser("Music", sounds.music.firstOrNull { it.first == music && it.second == bank }?.third ?: "Track $music",
+            sounds.music, { it.third }, Modifier.fillMaxWidth()) { m ->
+            state.edit("Music: ${m.third}") { map.world.setMusic(map.id, m.first, m.second) }
+        }
+        Text("Add", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilledTonalButton(onClick = { st.adding = "npc" }, enabled = map.canAddNpc, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ NPC") }
+            FilledTonalButton(onClick = { st.adding = "sign" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Sign") }
+            FilledTonalButton(onClick = { st.adding = "door" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Door") }
+            FilledTonalButton(onClick = { st.adding = "trigger" }, enabled = map.eventsValid, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+ Trigger") }
+        }
+        map.triggers.filter { it.x == null }.forEach { t ->
+            TextButton(onClick = { select(st, Selection.Trigger(t.textId)) }) { Text("Map-entry trigger (text #${t.textId})") }
+        }
+        Text("Border", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Image(gfx.block(map.tilesetId, map.borderBlock), null, Modifier.size(32.dp), filterQuality = FilterQuality.None)
+            Text("Block ${map.borderBlock}", Modifier.weight(1f))
+            TextButton(onClick = { state.edit("Border block set") { map.setBorderBlock(st.block) } }, enabled = map.eventsValid) { Text("Use tile ${st.block}") }
+        }
+        if (map.connections.isNotEmpty()) {
+            Text("Connections", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            map.connections.forEach { (dir, target) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("$dir: ${state.mapName(target)}", Modifier.weight(1f))
+                    TextButton(onClick = { state.go(com.needlerom.app.Route.MapEditor(target)) }) { Text("Open") }
+                }
+            }
+        }
+        Text("View", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(st.showGrid, { st.showGrid = !st.showGrid }, label = { Text("Grid") })
+            FilterChip(st.showCollision, { st.showCollision = !st.showCollision }, label = { Text("Blocked tiles") })
+            TextButton(onClick = { st.fit(map) }) { Text("Fit") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { state.go(com.needlerom.app.Route.WildEditor(map.id)) }) { Text("Wild Pokémon") }
+            OutlinedButton(onClick = { playHere(state, map, st) }) { Text("▶ Play here") }
+        }
+        Hint("Select an object on the map (Events tool) to edit it here.")
+    }
+}
+
+@Composable
+private fun Prop(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** Starts a fresh game at a walkable tile near the middle of the view. */
+fun playHere(state: AppState, map: GameMap, st: EditorState) {
+    val (x, y) = startStepNear(map, st.centerStep(map))
+    state.go(com.needlerom.app.Route.Playtest(Triple(map.id, x, y)))
+}
+
+/** The tile palette (bottom dock). */
+@Composable
+fun MapTiles(state: AppState, mapId: Int, gfx: GfxCache) {
+    val game = state.game ?: return
+    val map = remember(mapId, state.revision) { game.world.map(mapId) }
+    val st = state.editor(mapId)
+    Palette(map, st, gfx)
 }
 
 /** A walkable, empty step near [start], for "Playtest from here". */
-private fun startStepNear(map: GameMap, start: Pair<Int, Int>): Pair<Int, Int> {
+internal fun startStepNear(map: GameMap, start: Pair<Int, Int>): Pair<Int, Int> {
     for (r in 0..12) for (dy in -r..r) for (dx in -r..r) {
         val x = start.first + dx; val y = start.second + dy
         if (x !in 0 until map.stepWidth || y !in 0 until map.stepHeight) continue
@@ -431,21 +495,25 @@ private suspend fun PointerInputScope.gestures(state: AppState, st: EditorState,
 private fun Palette(map: GameMap, st: EditorState, gfx: GfxCache) {
     val ts = map.tilesetId
     val count = remember(ts) { map.tileset.blockCount }
-    Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Image(gfx.block(ts, st.block), null, Modifier.size(36.dp), filterQuality = FilterQuality.None)
-        Text(when (st.tool) {
-            Tool.FILL -> "Tap an area to fill it with block ${st.block}"
-            Tool.PICK -> "Tap the map to copy a block"
-            else -> "Block ${st.block}: drag to paint · two fingers to move"
-        }, style = MaterialTheme.typography.bodySmall)
-    }
-    LazyRow(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
-        items((0 until count).toList()) { id ->
-            val on = id == st.block
-            Image(gfx.block(ts, id), "Block $id",
-                Modifier.size(48.dp).border(if (on) 3.dp else 0.dp, if (on) MaterialTheme.colorScheme.secondary else Color.Transparent, RoundedCornerShape(4.dp))
-                    .clickable { st.block = id; if (st.tool == Tool.PICK) st.tool = Tool.PAINT },
-                filterQuality = FilterQuality.None)
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Image(gfx.block(ts, st.block), null, Modifier.size(28.dp), filterQuality = FilterQuality.None)
+            Text(when (st.tool) {
+                Tool.FILL -> "Fill with block ${st.block}: tap an area"
+                Tool.PICK -> "Pick: tap the map to copy a block"
+                Tool.PAINT -> "Block ${st.block}: drag to paint · two fingers to move"
+                else -> "Block ${st.block} · choose Paint or Fill to use it"
+            }, style = MaterialTheme.typography.bodySmall)
+        }
+        LazyVerticalGrid(GridCells.Adaptive(44.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            items((0 until count).toList()) { id ->
+                val on = id == st.block
+                Image(gfx.block(ts, id), "Block $id",
+                    Modifier.size(44.dp).border(if (on) 3.dp else 0.dp, if (on) MaterialTheme.colorScheme.secondary else Color.Transparent, RoundedCornerShape(3.dp))
+                        .clickable { st.block = id; if (st.tool == Tool.PICK || st.tool == Tool.MOVE || st.tool == Tool.EVENTS) st.tool = Tool.PAINT },
+                    filterQuality = FilterQuality.None)
+            }
         }
     }
 }

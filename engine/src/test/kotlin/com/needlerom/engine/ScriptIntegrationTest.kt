@@ -56,6 +56,9 @@ class ScriptIntegrationTest {
         assertTrue(potion to 3 in bag(gb, g), "the event ran past the cry and music: ${bag(gb, g)}")
         assertEquals(surf.first, gb.read(TestRoms.sym("pokered.sym", "wLastMusicSoundID")))
         assertEquals(surf.second, gb.read(TestRoms.sym("pokered.sym", "wAudioROMBank")))
+        // Pallet Town's music, as a table entry.
+        val pallet = ScriptEngine.sounds(g).music.first { it.third == "Pallet Town" }
+        assertEquals(pallet.first to pallet.second, g.world.music(0))
     }
 
     @Test

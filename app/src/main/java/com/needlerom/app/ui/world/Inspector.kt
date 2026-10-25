@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -54,7 +55,7 @@ import com.needlerom.engine.pokered.Text as GameText
 fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx: GfxCache) {
     var pickingSprite by remember { mutableStateOf(false) }
     Column(
-        Modifier.padding(horizontal = 12.dp).heightIn(max = 300.dp).verticalScroll(rememberScrollState()),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         when (val sel = st.selection) {
@@ -125,7 +126,7 @@ fun Inspector(state: AppState, game: PokeRed, map: GameMap, st: EditorState, gfx
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     NumberField("Arrive at door #", w.destWarp, Modifier.weight(1f), 1..32) { door -> state.edit { map.setWarpDestination(w, w.destMap, door) } }
-                    if (w.destMap != 0xFF) OutlinedButton(onClick = { state.replace(Route.MapEditor(w.destMap)) }) { Text("Open map") }
+                    if (w.destMap != 0xFF) OutlinedButton(onClick = { state.go(Route.MapEditor(w.destMap)) }) { Text("Open map") }
                 }
                 Hint("Doors work in pairs: the door on the other map should lead back here.")
                 if (w.index >= map.firstAddedWarp) {

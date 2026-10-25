@@ -66,7 +66,13 @@ fun Pixel(image: ImageBitmap?, size: Dp, modifier: Modifier = Modifier) {
         Image(image, null, modifier.size(size), filterQuality = FilterQuality.None)
 }
 
-/** Standard screen: top bar with back arrow, optional actions, scrolling or custom body. */
+/** True inside the studio, where screens become documents with a compact header. */
+val LocalEmbedded = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * Standard screen: top bar with back arrow, optional actions, scrolling or custom body.
+ * Inside the studio ([LocalEmbedded]) it shows as a document with a slim header instead.
+ */
 @Composable
 fun Screen(
     title: String,
@@ -77,6 +83,28 @@ fun Screen(
     scroll: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (LocalEmbedded.current) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).padding(start = 12.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                actions()
+            }
+            Column(
+                if (scroll) Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp) else Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = content,
+            )
+            bottomBar()
+        }
+        return
+    }
     Scaffold(
         topBar = {
             TopAppBar(

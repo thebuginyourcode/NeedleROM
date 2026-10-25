@@ -22,10 +22,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Where the user is. The back stack is a list of these. */
+/**
+ * Where the user is. [Home] and [Studio] are screens; everything else is a document that
+ * opens as a tab inside the studio.
+ */
 sealed interface Route {
     data object Home : Route
-    data class Workspace(val tab: Tab = Tab.WORLD) : Route
+    data object Studio : Route
     data class MapEditor(val mapId: Int) : Route
     data class ScriptEditor(val mapId: Int, val textId: Int, val title: String) : Route
     data class PokemonEditor(val dex: Int) : Route
@@ -34,8 +37,6 @@ sealed interface Route {
     /** [start] = (map, x, y) starts a fresh game there instead of booting normally. */
     data class Playtest(val start: Triple<Int, Int, Int>? = null) : Route
 }
-
-enum class Tab(val label: String) { WORLD("World"), EVENTS("Events"), DATA("Data"), PLAY("Play") }
 
 enum class ExportKind(val ext: String, val label: String) { ROM("gb", "ROM"), IPS("ips", "IPS patch"), BPS("bps", "BPS patch") }
 
@@ -53,24 +54,63 @@ class AppState(app: Application) : AndroidViewModel(app) {
         private set
     var busy by mutableStateOf(false)
         private set
-    var message: String? by mutableStateOf(null)
+    private var shown: String? by mutableStateOf(null)
 
-    private val stack = mutableStateListOf<Route>(Route.Home)
-    val route: Route get() = stack.last()
+    /** The latest message (shown briefly); every message is also kept in [log]. */
+    var message: String?
+        get() = shown
+        set(v) { shown = v; if (v != null) log += v }
+    val log = mutableStateListOf<String>()
+
+    var route: Route by mutableStateOf(Route.Home)
+        private set
+
+    /** Documents open in the studio, and which one is showing. */
+    val docs = mutableStateListOf<Route>()
+    var activeDoc by mutableIntStateOf(0)
+    val doc: Route? get() = docs.getOrNull(activeDoc)
+
+    /** Per-map editor state (tool, selection, zoom) for the open project. */
+    val editors = HashMap<Int, com.needlerom.app.ui.world.EditorState>()
 
     init {
         refreshProjects()
     }
 
-    fun go(r: Route) { stack.add(r) }
+    /** Opens a document as a tab (or focuses it if it's already open). */
+    fun go(r: Route) {
+        when (r) {
+            Route.Home -> { if (route != Route.Home) closeProject(); route = Route.Home }
+            Route.Studio -> route = Route.Studio
+            else -> {
+                val i = docs.indexOf(r)
+                if (i >= 0) activeDoc = i else { docs += r; activeDoc = docs.lastIndex }
+            }
+        }
+    }
+
+    /** Shows [r] in place of the current document tab. */
+    fun replace(r: Route) {
+        val i = docs.indexOf(r)
+        when {
+            i >= 0 -> activeDoc = i
+            docs.isEmpty() -> go(r)
+            else -> docs[activeDoc] = r
+        }
+    }
+
+    fun closeDoc(i: Int) {
+        if (i !in docs.indices) return
+        docs.removeAt(i)
+        if (activeDoc >= docs.size) activeDoc = maxOf(0, docs.lastIndex) else if (i < activeDoc) activeDoc--
+    }
+
+    /** Back closes the current tab; with one tab left it returns to the project list. */
     fun back(): Boolean {
-        if (stack.size <= 1) return false
-        stack.removeAt(stack.lastIndex)
-        if (stack.last() == Route.Home) closeProject()
+        if (route == Route.Home) return false
+        if (docs.size > 1) closeDoc(activeDoc) else go(Route.Home)
         return true
     }
-    /** Replaces the current screen (e.g. switching workspace tabs). */
-    fun replace(r: Route) { stack[stack.lastIndex] = r }
 
     fun toast(m: String) { message = m }
 
@@ -100,12 +140,18 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
     fun openProject(p: Project) = work("Couldn't open the project") {
         val g = p.open()
-        withContext(Dispatchers.Main) { project = p; game = g; revision++; go(Route.Workspace()) }
+        withContext(Dispatchers.Main) { project = p; game = g; revision++; enterStudio() }
     }
 
     private suspend fun openProjectNow(p: Project) {
         val g = withContext(Dispatchers.IO) { p.open() }
-        project = p; game = g; revision++; go(Route.Workspace())
+        project = p; game = g; revision++; enterStudio()
+    }
+
+    private fun enterStudio() {
+        docs.clear(); log.clear(); editors.clear()
+        docs += Route.MapEditor(0); activeDoc = 0
+        route = Route.Studio
     }
 
     fun deleteProject(p: Project) {

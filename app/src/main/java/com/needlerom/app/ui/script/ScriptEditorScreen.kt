@@ -57,6 +57,9 @@ private class Ctx(val game: PokeRed, val flagNames: Map<Int, String>, val npcs: 
     fun item(id: Int) = game.itemName(id)
     fun flag(n: Int) = flagNames[n]?.takeIf { it.isNotBlank() }?.let { "$it (flag $n)" } ?: "Flag $n"
     fun trainer(c: Int) = game.trainerClassNames.getOrElse(c) { "Class $c" }
+    val sounds = com.needlerom.engine.script.ScriptEngine.sounds(game)
+    fun sound(id: Int) = sounds.effects.firstOrNull { it.first == id }?.second ?: "Sound $id"
+    fun music(id: Int, bank: Int) = sounds.music.firstOrNull { it.first == id && it.second == bank }?.third ?: "Track $id"
 }
 
 @Composable
@@ -221,7 +224,9 @@ private fun title(c: Ctx, s: Step): String = when (s) {
     is Step.TrainerBattle -> "Trainer battle: ${c.trainer(s.trainerClass)} team ${s.team}"
     Step.Heal -> "Heal the party"
     is Step.GiveMoney -> "Give ¥${s.amount}"
-    is Step.PlaySound -> "Play sound ${s.sound}"
+    is Step.PlaySound -> "Play sound: ${c.sound(s.sound)}"
+    is Step.PlayCry -> "Cry: ${c.mon(s.species)}"
+    is Step.PlayMusic -> "Change music: ${c.music(s.music, s.bank)}"
     is Step.WalkToPlayer -> "${c.npc(s.npc)} walks up to the player"
 }
 
@@ -251,7 +256,9 @@ private fun AddStepDialog(ctx: Ctx, onDismiss: () -> Unit, onAdd: (Step) -> Unit
         "Give money" to { Step.GiveMoney(500) },
         "Wild battle" to { Step.WildBattle(ctx.species.first(), 5) },
         "Trainer battle" to { Step.TrainerBattle(1, 1) },
-        "Play sound" to { Step.PlaySound(0x86) },
+        "Play sound effect" to { Step.PlaySound(ctx.sounds.effects.first().first) },
+        "Play a Pokémon's cry" to { Step.PlayCry(ctx.species.first()) },
+        "Change music" to { ctx.sounds.music.first().let { Step.PlayMusic(it.first, it.second) } },
     ) + if (ctx.isTrigger && ctx.npcs.isNotEmpty()) listOf("NPC walks up to the player" to { Step.WalkToPlayer(ctx.npcs.size - 1) }) else emptyList()
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -331,8 +338,13 @@ private fun StepDialog(ctx: Ctx, step: Step, onDismiss: () -> Unit, onSave: (Ste
                     }
                     is Step.GiveMoney -> NumberField("Amount (¥)", v.amount, Modifier.fillMaxWidth(), 0..999999) { s = v.copy(amount = it) }
                     is Step.PlaySound -> {
-                        NumberField("Sound id", v.sound, Modifier.fillMaxWidth(), 0..255) { s = v.copy(sound = it) }
-                        Hint("A sound effect number from the game's sound list.")
+                        Chooser("Sound effect", ctx.sound(v.sound), ctx.sounds.effects, { it.second }, Modifier.fillMaxWidth()) { s = v.copy(sound = it.first) }
+                        Hint("Every sound effect the game can play outside battle.")
+                    }
+                    is Step.PlayCry -> Chooser("Pokémon", ctx.mon(v.species), ctx.species, ctx::mon, Modifier.fillMaxWidth()) { s = v.copy(species = it) }
+                    is Step.PlayMusic -> {
+                        Chooser("Music", ctx.music(v.music, v.bank), ctx.sounds.music, { it.third }, Modifier.fillMaxWidth()) { s = Step.PlayMusic(it.first, it.second) }
+                        Hint("Plays until the player changes maps.")
                     }
                     else -> {}
                 }
