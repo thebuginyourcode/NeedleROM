@@ -17,6 +17,9 @@ import com.needlerom.engine.rom.Gb
 object ScriptEngine {
     private const val TABLE = 0x0800 // offset inside the engine bank ($4800)
     private const val TABLE_ENTRIES = 255
+    private const val TRIGGERS = 0x0600 // $4600
+    private const val TRIGGER_ENTRIES = 63
+    private const val FORMAT = 2
     private val MAGIC = "NEEDLE".toByteArray()
 
     /** Home routines the interpreter calls; all must be unmodified for scripts to be offered. */
@@ -38,15 +41,20 @@ object ScriptEngine {
         return MAGIC.indices.all { g.rom.u8(s + it) == MAGIC[it].toInt() and 0xFF }
     }
 
-    /** Writes the interpreter and an empty script table, reserving the start of the engine bank. */
+    /**
+     * Writes the interpreter and empty tables, reserving the start of the engine bank, or
+     * upgrades an older engine in place (keeping its scripts).
+     */
     fun ensureBank(g: PokeRed) {
-        if (bankReady(g)) return
-        val code = ScriptBlobs.CODE.getValue(versionKey(g)).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         val s = bankStart(g)
+        val ready = bankReady(g)
+        if (ready && g.rom.u8(s + 6) >= FORMAT) return
+        val code = ScriptBlobs.CODE.getValue(versionKey(g)).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         // Anything already allocated must be past the reserved area ($4000-$4BFF).
         g.rom.batch {
             g.rom.write(s, code, "Install event script engine")
-            g.rom.write(s + TABLE, ByteArray(TABLE_ENTRIES * 4 + 4) { 0xFF.toByte() }, "Install event script engine")
+            g.rom.write(s + TRIGGERS, ByteArray(TRIGGER_ENTRIES * 8 + 8) { 0xFF.toByte() }, "Install event script engine")
+            if (!ready) g.rom.write(s + TABLE, ByteArray(TABLE_ENTRIES * 4 + 4) { 0xFF.toByte() }, "Install event script engine")
         }
     }
 
@@ -117,7 +125,8 @@ object ScriptEngine {
     }
 
     /** Compiles and stores [script] for the given map and text id (replacing any previous one). */
-    fun put(g: PokeRed, map: Int, textId: Int, script: EventScript) {
+    fun put(g: PokeRed, map: Int, textId: Int, script0: EventScript) {
+        val script = materializeTeams(g, script0)
         val compiler = ScriptCompiler(g.sym("wEventFlags"))
         val codeSize = compiler.compile(script)
         val src = ScriptCodec.encode(script).toByteArray(Charsets.UTF_8)
@@ -146,4 +155,111 @@ object ScriptEngine {
     }
 
     private const val DEAD = 0xFE
+
+    /** Moves a script from one text id to another (used when the editor renumbers texts). */
+    fun renumber(g: PokeRed, map: Int, from: Int, to: Int) {
+        entries(g).firstOrNull { it.map == map && it.textId == from }?.let {
+            g.rom.write8(tableOffset(g) + it.slot * 4 + 1, to, "Renumber event")
+        }
+        triggerEntries(g).filter { it.map == map && it.textId == from }.forEach {
+            g.rom.write8(triggerOffset(g) + it.slot * 8 + 3, to, "Renumber event")
+        }
+    }
+
+    // ---- Custom trainer teams -----------------------------------------------------------------
+
+    /** Gives every trainer battle with a custom team a real team number in the ROM. */
+    private fun materializeTeams(g: PokeRed, s: EventScript): EventScript {
+        fun fix(list: List<Step>): List<Step> = list.map { st ->
+            when (st) {
+                is Step.TrainerBattle -> {
+                    val team = st.customTeam
+                    if (team.isNullOrEmpty()) st else st.copy(team = g.trainers.putCustomTeam(st.trainerClass, st.team, team))
+                }
+                is Step.Ask -> st.copy(yes = fix(st.yes), no = fix(st.no))
+                is Step.IfFlag -> st.copy(then = fix(st.then), otherwise = fix(st.otherwise))
+                is Step.IfHasItem -> st.copy(then = fix(st.then), otherwise = fix(st.otherwise))
+                is Step.GiveItem -> st.copy(ifBagFull = fix(st.ifBagFull))
+                is Step.GivePokemon -> st.copy(ifNoRoom = fix(st.ifNoRoom))
+                else -> st
+            }
+        }
+        return EventScript(fix(s.steps))
+    }
+
+    // ---- Triggers -----------------------------------------------------------------------------
+
+    /** A tile (or a whole map, when x/y are null) that starts an event when the player steps on it. */
+    data class Trigger(val map: Int, val x: Int?, val y: Int?, val textId: Int, val flag: Int)
+
+    private data class TriggerEntry(val slot: Int, val map: Int, val textId: Int)
+
+    private fun triggerOffset(g: PokeRed) = bankStart(g) + TRIGGERS
+
+    private fun triggerEntries(g: PokeRed): List<TriggerEntry> {
+        if (!bankReady(g) || g.rom.u8(bankStart(g) + 6) < FORMAT) return emptyList()
+        val out = mutableListOf<TriggerEntry>()
+        for (i in 0 until TRIGGER_ENTRIES) {
+            val o = triggerOffset(g) + i * 8
+            val map = g.rom.u8(o)
+            if (map == 0xFF) break
+            out += TriggerEntry(i, map, g.rom.u8(o + 3))
+        }
+        return out
+    }
+
+    fun triggers(g: PokeRed, map: Int): List<Trigger> = triggerEntries(g).filter { it.map == map }.map { e ->
+        val o = triggerOffset(g) + e.slot * 8
+        val x = g.rom.u8(o + 1); val y = g.rom.u8(o + 2)
+        val addr = g.rom.u16(o + 4); val mask = g.rom.u8(o + 6)
+        val event = (addr - g.sym("wEventFlags")) * 8 + Integer.numberOfTrailingZeros(mask)
+        Trigger(map, x.takeIf { it != 0xFF }, y.takeIf { it != 0xFF }, e.textId, event - Flags.FIRST_EVENT)
+    }
+
+    /** All maps that have at least one trigger. */
+    fun triggerMaps(g: PokeRed): Set<Int> = triggerEntries(g).map { it.map }.filter { it != DEAD }.toSet()
+
+    /** Adds or updates the trigger for [t]'s map and text id. */
+    fun putTrigger(g: PokeRed, t: Trigger) {
+        require(t.flag in 0 until Flags.COUNT)
+        ensureBank(g)
+        val e = Flags.FIRST_EVENT + t.flag
+        val addr = g.sym("wEventFlags") + e / 8
+        val bytes = byteArrayOf(t.map.toByte(), (t.x ?: 0xFF).toByte(), (t.y ?: 0xFF).toByte(), t.textId.toByte(),
+            addr.toByte(), (addr shr 8).toByte(), (1 shl (e % 8)).toByte(), 0)
+        val list = triggerEntries(g)
+        val slot = list.firstOrNull { it.map == t.map && it.textId == t.textId }?.slot
+            ?: list.firstOrNull { it.map == DEAD }?.slot ?: list.size
+        if (slot >= TRIGGER_ENTRIES) throw EditException("Too many triggers (max $TRIGGER_ENTRIES)")
+        g.rom.write(triggerOffset(g) + slot * 8, bytes, "Trigger")
+    }
+
+    fun removeTrigger(g: PokeRed, map: Int, textId: Int) {
+        triggerEntries(g).filter { it.map == map && it.textId == textId }.forEach {
+            g.rom.write8(triggerOffset(g) + it.slot * 8, DEAD, "Remove trigger")
+        }
+        remove(g, map, textId)
+    }
+
+    /** Flags already used by triggers (so new triggers can pick a free one). */
+    fun usedTriggerFlags(g: PokeRed): Set<Int> = triggerEntries(g).filter { it.map != DEAD }.flatMap { e -> triggers(g, e.map).map { it.flag } }.toSet()
+
+    // ---- Per-map script hook ------------------------------------------------------------------
+
+    /** The 11-byte stub placed in a map's bank: run NeedleMapScript, then the map's own script. */
+    fun mapHookBytes(g: PokeRed, original: Int): ByteArray {
+        val bs = g.sym("Bankswitch")
+        return byteArrayOf(
+            0x06, g.world.engineBank.toByte(),                 // ld b, ENGINE_BANK
+            0x21, 0x0B, 0x40,                                  // ld hl, NeedleMapScript ($400B)
+            0xCD.toByte(), bs.toByte(), (bs shr 8).toByte(),   // call Bankswitch
+            0xC3.toByte(), original.toByte(), (original shr 8).toByte(), // jp <map's own script>
+        )
+    }
+
+    /** True if [at] holds a map hook stub. */
+    fun isMapHook(g: PokeRed, at: Int): Boolean {
+        val probe = mapHookBytes(g, 0)
+        return (0 until 8).all { g.rom.inBounds(at + it) && g.rom.u8(at + it) == (probe[it].toInt() and 0xFF) }
+    }
 }

@@ -19,7 +19,7 @@ SYMBOLS = [
     "MapHeaderPointers", "MapHeaderBanks", "Tilesets", "SpriteSheetPointerTable",
     "ItemNames", "ItemPrices", "MonsterNames", "BaseStats", "MewBaseStats",
     "TrainerDataPointers", "TrainerNames", "WildDataPointers", "EvosMovesPointerTable",
-    "MoveNames", "Moves", "PokedexOrder", "TypeNames", "Overworld_Coll",
+    "MoveNames", "Moves", "PokedexOrder", "TypeNames", "Overworld_Coll", "MapSongBanks",
     # home routines used by the script engine
     "TextScriptEnd", "Bankswitch", "PrintText", "GiveItem", "GivePokemon", "YesNoChoice",
     "IsItemInBag", "Predef", "PlaySound", "WaitForSoundToFinish", "DelayFrames",
@@ -214,6 +214,15 @@ out.append("}")
 if SRC:
     maps = constant_names(f"{SRC}/constants/map_constants.asm")
     sprites = constant_names(f"{SRC}/constants/sprite_constants.asm", "SPRITE_")
+    tilesets = constant_names(f"{SRC}/constants/tileset_constants.asm")
+    unused_maps = [k for k, v in constant_names(f"{SRC}/constants/map_constants.asm").items() if v.startswith("UNUSED") and k >= 0x25]
+    # Yellow reuses some of Red's unused slots (e.g. the Beach House); keep ones free in both.
+    ysrc = SRC.replace("pokered", "pokeyellow")
+    try:
+        yellow_unused = {k for k, v in constant_names(f"{ysrc}/constants/map_constants.asm").items() if v.startswith("UNUSED")}
+        unused_maps = [k for k in unused_maps if k in yellow_unused]
+    except FileNotFoundError:
+        pass
     out.append("")
     out.append("internal object Names {")
     out.append("    val MAPS: Map<Int, String> = mapOf(")
@@ -222,6 +231,12 @@ if SRC:
             continue
         out.append(f'        0x{k:02X} to "{pretty(maps[k])}",')
     out.append("    )")
+    out.append("    val TILESETS: Map<Int, String> = mapOf(")
+    for k in sorted(tilesets):
+        out.append(f'        {k} to "{pretty(tilesets[k])}",')
+    out.append("    )")
+    out.append("    /** Indoor map ids the games never use; new maps take these. */")
+    out.append("    val UNUSED_MAPS: List<Int> = listOf(" + ", ".join(f"0x{k:02X}" for k in sorted(unused_maps)) + ")")
     out.append("    val SPRITES: Map<Int, String> = mapOf(")
     for k in sorted(sprites):
         if k == 0:

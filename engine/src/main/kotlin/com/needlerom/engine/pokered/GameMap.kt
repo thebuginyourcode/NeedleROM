@@ -2,6 +2,7 @@ package com.needlerom.engine.pokered
 
 import com.needlerom.engine.rom.Gb
 import com.needlerom.engine.script.EventScript
+import com.needlerom.engine.script.Flags
 import com.needlerom.engine.script.ScriptEngine
 
 enum class NpcKind { PERSON, TRAINER, ITEM }
@@ -162,6 +163,7 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
     val eventsValid: Boolean get() = events != null
 
     private val originalEvents: Events? by lazy {
+        if (id in world.createdMaps()) return@lazy null // made in the editor: everything is deletable
         val oh = rom.original
         val optr = (oh[eventsPtrField].toInt() and 0xFF) or ((oh[eventsPtrField + 1].toInt() and 0xFF) shl 8)
         parseEvents(oh, Gb.offset(bank, optr))
@@ -186,9 +188,10 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
     } ?: emptyList()
 
     /** Events at or beyond these indexes were added in the editor and may be deleted. */
-    val firstAddedNpc: Int get() = originalEvents?.objects?.size ?: npcs.size
-    val firstAddedSign: Int get() = originalEvents?.signs?.size ?: signs.size
-    val firstAddedWarp: Int get() = originalEvents?.warps?.size ?: warps.size
+    private val isNew get() = id in world.createdMaps()
+    val firstAddedNpc: Int get() = originalEvents?.objects?.size ?: if (isNew) 0 else npcs.size
+    val firstAddedSign: Int get() = originalEvents?.signs?.size ?: if (isNew) 0 else signs.size
+    val firstAddedWarp: Int get() = originalEvents?.warps?.size ?: if (isNew) 1 else warps.size
 
     fun npcAt(x: Int, y: Int) = npcs.lastOrNull { it.x == x && it.y == y }
     fun warpAt(x: Int, y: Int) = warps.lastOrNull { it.x == x && it.y == y }
@@ -333,7 +336,7 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
 
     /** How many NPCs this map can hold without colliding with text the map's scripts show by number. */
     val maxNpcs: Int get() {
-        val used = (npcs.map { it.textId } + signs.map { it.textId }).toSet()
+        val used = (npcs.map { it.textId } + signs.map { it.textId } + triggers.map { it.textId }).toSet()
         val scriptOnly = (1..textTableSize).filter { it !in used }
         return minOf(16, (scriptOnly.minOrNull() ?: Int.MAX_VALUE) - 1).coerceAtLeast(npcs.size)
     }
@@ -353,10 +356,16 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
             val entries = textEntries().toMutableList()
             entries += behaviorPointer(behavior)
             val t = entries.size
-            // Signs must have text ids above the NPC count; renumber any that would collide.
+            // Signs and triggers must have text ids above the NPC count; renumber any that would collide.
             for (s in e.signs) {
                 val sid = s[2].toInt() and 0xFF
                 if (sid <= newCount) { entries += entries[sid - 1]; s[2] = entries.size.toByte() }
+            }
+            for (tr in triggers) {
+                if (tr.textId <= newCount) {
+                    entries += entries[tr.textId - 1]
+                    ScriptEngine.renumber(g, id, tr.textId, entries.size)
+                }
             }
             writeTextTable(entries)
             e.objects += byteArrayOf(sprite.toByte(), (y + 4).toByte(), (x + 4).toByte(), movement.movement.toByte(), movement.range.toByte(), t.toByte())
@@ -394,6 +403,58 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
         writeEvents(e, "Remove sign from ${info.name}", true)
     }
 
+    // ---- Triggers -----------------------------------------------------------------------------
+
+    /** Tiles (or the whole map) that start an event when the player steps there. */
+    val triggers: List<ScriptEngine.Trigger> = ScriptEngine.triggers(g, id)
+
+    fun triggerAt(x: Int, y: Int) = triggers.lastOrNull { it.x == x && it.y == y }
+
+    private val scriptPtrField = h + 7
+
+    /** Puts the NeedleScript hook in front of this map's own per-frame script. */
+    private fun installMapHook() {
+        val cur = Gb.offset(bank, rom.u16(scriptPtrField))
+        if (ScriptEngine.isMapHook(g, cur)) return
+        val stub = ScriptEngine.mapHookBytes(g, rom.u16(scriptPtrField))
+        val at = world.allocIn(bank, stub, "Event hook for ${info.name}")
+        rom.write16(scriptPtrField, Gb.ptr(at), "Event hook for ${info.name}")
+    }
+
+    /**
+     * Adds a trigger at (x, y), or anywhere on the map when x/y are null. It fires once,
+     * remembered with a flag, and runs [script].
+     */
+    fun addTrigger(x: Int?, y: Int?, script: EventScript): ScriptEngine.Trigger {
+        if (x != null && y != null && !inMap(x, y)) throw EditException("Outside the map")
+        val e = requireEvents()
+        val used = ScriptEngine.usedTriggerFlags(g)
+        val flag = (Flags.COUNT - 1 downTo 64).firstOrNull { it !in used }
+            ?: throw EditException("Out of trigger flags")
+        var t: ScriptEngine.Trigger? = null
+        rom.batch {
+            ScriptEngine.install(g)
+            installMapHook()
+            val entries = textEntries().toMutableList()
+            // Like signs, trigger text ids must be above the NPC count.
+            while (entries.size < e.objects.size) entries += entries.lastOrNull() ?: behaviorPointer(Behavior.Talk("…"))
+            entries += behaviorPointer(Behavior.Script)
+            writeTextTable(entries)
+            val trigger = ScriptEngine.Trigger(id, x, y, entries.size, flag)
+            ScriptEngine.putTrigger(g, trigger)
+            ScriptEngine.put(g, id, trigger.textId, script)
+            t = trigger
+        }
+        return t!!
+    }
+
+    fun moveTrigger(t: ScriptEngine.Trigger, x: Int?, y: Int?) {
+        if (x != null && y != null && !inMap(x, y)) return
+        ScriptEngine.putTrigger(g, t.copy(x = x, y = y))
+    }
+
+    fun removeTrigger(t: ScriptEngine.Trigger) = ScriptEngine.removeTrigger(g, id, t.textId)
+
     // ---- Text table & behaviours --------------------------------------------------------------
 
     private val textTableOffset get() = Gb.offset(bank, rom.u16(textPtrField))
@@ -404,7 +465,8 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
         val origPtr = (rom.original[textPtrField].toInt() and 0xFF) or ((rom.original[textPtrField + 1].toInt() and 0xFF) shl 8)
         val known = g.version.textTableSizes.getOrElse(id) { 0 }
         val referenced = (npcs.map { it.textId } + signs.map { it.textId }).maxOrNull() ?: 0
-        if (ptr == origPtr && g.exact && known > 0) return maxOf(known, referenced)
+        // Exact sizes from the disassembly (0 is valid: some maps have no texts at all).
+        if (ptr == origPtr && g.exact && id !in world.createdMaps()) return maxOf(known, referenced)
         // Relocated by the editor (terminated by 0x0000) or an unknown hack: scan.
         var n = 0
         while (n < 64) {

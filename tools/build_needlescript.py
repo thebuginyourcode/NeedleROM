@@ -22,8 +22,12 @@ NEEDED = [
     "wCurrentMenuItem", "GiveItem", "GivePokemon", "wCurOpponent", "wCurEnemyLevel",
     "wTrainerNo", "SaveEndBattleTextPointers", "HealParty", "hMoney", "AddAmountSoldToMoney",
     "IsItemInBag", "hItemToRemoveID", "RemoveItemByID", "PlaySound", "WaitForSoundToFinish", "Bankswitch",
+    "DisplayTextID", "wXCoord", "wYCoord", "wStatusFlags5", "wJoyIgnore", "MoveSprite", "wNPCMovementDirections2",
+    "hSpriteIndex", "hNPCSpriteOffset", "hNPCPlayerRelativePosPerspective", "hNPCPlayerYDistance", "hNPCPlayerXDistance",
+    "wDoNotWaitForButtonPressAfterDisplayingText", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer",
+    "wUnusedMapVariable", "wUnusedPlayerDataByte", "wUnusedObtainedBadges",
 ]
-FAR = ["HealParty", "RemoveItemByID"]
+FAR = ["HealParty", "RemoveItemByID", "CalcPositionOfPlayerRelativeToNPC", "FindPathToPlayer"]
 
 
 def load_sym(path):
@@ -56,7 +60,7 @@ for key, base in [("RED", "pokered"), ("BLUE", "pokeblue"), ("YELLOW", "pokeyell
         nsyms = load_sym(os.path.join(tmp, "n.sym"))
         end = nsyms["NeedleRunEnd"][1]
         code = rom[0x4000:0x4000 + (end - 0x4000)]
-        assert end < 0x4800, "interpreter overflows into the script table"
+        assert end < 0x4600, "interpreter overflows into the trigger table"
         blobs.append((key, code))
         print(key, len(code), "bytes")
 

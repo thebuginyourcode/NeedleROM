@@ -1,5 +1,7 @@
 package com.needlerom.engine.script
 
+import com.needlerom.engine.pokered.PartyMon
+
 /**
  * An event script: what happens when the player talks to an NPC or reads a sign.
  * Scripts are structured (if/else blocks) so they can be edited as visual blocks; they
@@ -28,13 +30,24 @@ sealed interface Step {
     /** Starts a wild battle when the text box closes (like Snorlax or the legendary birds). */
     data class WildBattle(val species: Int, val level: Int) : Step
 
-    /** Starts a trainer battle when the text box closes. */
+    /**
+     * Starts a trainer battle when the text box closes. With [customTeam], the team is
+     * added to the trainer class as a new team when the event is saved (and [team] then
+     * holds its number).
+     */
     data class TrainerBattle(
         val trainerClass: Int,
         val team: Int,
         val winText: String = "Wow, you're\ngood!",
         val loseText: String = "Better luck\nnext time!",
+        val customTeam: List<PartyMon>? = null,
     ) : Step
+
+    /**
+     * An NPC on this map walks up to the player (stopping next to them). The event pauses
+     * while they walk. Only for trigger events, where the player is standing still.
+     */
+    data class WalkToPlayer(val npc: Int) : Step
 
     data object Heal : Step
 
@@ -94,6 +107,14 @@ object Templates {
         ),
     ))
 
+    /** A trainer who spots the player, walks over and battles (for trigger tiles). */
+    fun ambush(npc: Int, trainerClass: Int, team: List<PartyMon>) = EventScript(listOf(
+        Step.Say("Hey, you there!"),
+        Step.WalkToPlayer(npc),
+        Step.Say("You look strong.\nLet's battle!"),
+        Step.TrainerBattle(trainerClass, 0, customTeam = team),
+    ))
+
     fun trainer(trainerClass: Int, team: Int, flag: Int) = EventScript(listOf(
         Step.IfFlag(flag,
             then = listOf(Step.Say("That was a great\nbattle!")),
@@ -126,7 +147,11 @@ object ScriptCodec {
             is Step.ClearFlag -> sb.append("clear ${s.flag}")
             is Step.IfFlag -> { sb.append("if ${s.flag}"); block(s.then, sb); block(s.otherwise, sb) }
             is Step.WildBattle -> sb.append("wild ${s.species} ${s.level}")
-            is Step.TrainerBattle -> sb.append("trainer ${s.trainerClass} ${s.team} ").append(str(s.winText)).append(' ').append(str(s.loseText))
+            is Step.TrainerBattle -> {
+                sb.append("trainer ${s.trainerClass} ${s.team} ").append(str(s.winText)).append(' ').append(str(s.loseText))
+                s.customTeam?.let { t -> sb.append(" team"); t.forEach { sb.append(" ${it.level} ${it.species}") } }
+            }
+            is Step.WalkToPlayer -> sb.append("walk ${s.npc}")
             Step.Heal -> sb.append("heal")
             is Step.GiveMoney -> sb.append("money ${s.amount}")
             is Step.PlaySound -> sb.append("sound ${s.sound}")
@@ -169,7 +194,17 @@ object ScriptCodec {
                     "clear" -> Step.ClearFlag(int())
                     "if" -> Step.IfFlag(int(), block(), block())
                     "wild" -> Step.WildBattle(int(), int())
-                    "trainer" -> Step.TrainerBattle(int(), int(), string(), string())
+                    "trainer" -> {
+                        val t = Step.TrainerBattle(int(), int(), string(), string())
+                        ws()
+                        if (s.startsWith("team", i)) {
+                            i += 4
+                            val mons = mutableListOf<PartyMon>()
+                            while (true) { ws(); if (i >= s.length || s[i] == ';' || s[i] == '}') break; mons += PartyMon(int(), int()) }
+                            t.copy(customTeam = mons)
+                        } else t
+                    }
+                    "walk" -> Step.WalkToPlayer(int())
                     "heal" -> Step.Heal
                     "money" -> Step.GiveMoney(int())
                     "sound" -> Step.PlaySound(int())

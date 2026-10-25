@@ -25,6 +25,11 @@ data class Party(val mons: List<PartyMon>) {
 data class TrainerClass(val id: Int, val name: String, val parties: List<Party>)
 
 class TrainerData internal constructor(private val g: PokeRed) {
+    private companion object {
+        /** Ends a relocated class's teams (a team starts with a level 1-100 or $FF). */
+        const val END = 0xFE
+    }
+
     private val rom get() = g.rom
     private val bank get() = g.bankOf("TrainerDataPointers")
     private fun ptrField(cls: Int) = g.sym("TrainerDataPointers") + (cls - 1) * 2
@@ -32,12 +37,23 @@ class TrainerData internal constructor(private val g: PokeRed) {
 
     private fun partyCount(cls: Int): Int = g.version.trainerPartyCounts.getOrElse(cls - 1) { 1 }
 
+    private fun originalPtr(cls: Int): Int {
+        val o = ptrField(cls)
+        return (rom.original[o].toInt() and 0xFF) or ((rom.original[o + 1].toInt() and 0xFF) shl 8)
+    }
+
+    /** Relocated by the editor: teams run until an [END] marker instead of a fixed count. */
+    private fun relocated(cls: Int) = rom.u16(ptrField(cls)) != originalPtr(cls)
+
     /** Parses the class's teams; returns them with the byte size they occupy. */
     private fun parse(cls: Int): Pair<List<Party>, Int> {
         val start = dataOffset(cls)
         var p = start
         val parties = mutableListOf<Party>()
-        repeat(partyCount(cls)) {
+        val open = relocated(cls)
+        val count = if (open) 64 else partyCount(cls)
+        repeat(count) {
+            if (open && rom.u8(p) == END) return parties to (p - start + 1)
             val mons = mutableListOf<PartyMon>()
             if (rom.u8(p) == 0xFF) {
                 p++
@@ -62,12 +78,33 @@ class TrainerData internal constructor(private val g: PokeRed) {
     /** Replaces all of a class's teams. The number of teams must stay the same (maps refer to them by number). */
     fun setParties(cls: Int, parties: List<Party>) {
         val (old, oldSize) = parse(cls)
-        if (parties.size != old.size) throw EditException("This class must keep exactly ${old.size} team(s)")
+        if (parties.size < old.size) throw EditException("Teams can't be removed (maps refer to them by number)")
+        if (parties.size > 60) throw EditException("Too many teams")
         if (parties.any { it.mons.isEmpty() || it.mons.size > 6 }) throw EditException("Each team needs 1 to 6 Pokémon")
-        val bytes = parties.flatMap { it.encode().toList() }.toByteArray()
+        val bytes = parties.flatMap { it.encode().toList() }.toByteArray() + END.toByte()
         val ptr = rom.u16(ptrField(cls))
-        val shared = (1..PokeRed.NUM_TRAINER_CLASSES).count { rom.u16(ptrField(it)) == ptr } > 1
+        // A class whose team count changes must move, so it is read with the end marker afterwards.
+        val mustMove = !relocated(cls) && parties.size != partyCount(cls)
+        val shared = mustMove || (1..PokeRed.NUM_TRAINER_CLASSES).count { rom.u16(ptrField(it)) == ptr } > 1
         Blocks.replace(rom, ptrField(cls), bank, dataOffset(cls), oldSize, bytes, shared, "${g.trainerClassNames.getOrElse(cls) { "Trainer" }} teams")
+    }
+
+    /**
+     * Stores a team used by an event. Updates [team] in place if it is one of the teams
+     * added this way (beyond the original count); otherwise appends a new team. Returns
+     * the team number to battle.
+     */
+    fun putCustomTeam(cls: Int, team: Int, mons: List<PartyMon>): Int {
+        val all = parties(cls).toMutableList()
+        val party = Party(mons)
+        return if (team > partyCount(cls) && team <= all.size) {
+            if (all[team - 1] != party) { all[team - 1] = party; setParties(cls, all) }
+            team
+        } else {
+            all += party
+            setParties(cls, all)
+            all.size
+        }
     }
 
     fun setParty(cls: Int, team: Int, party: Party) {

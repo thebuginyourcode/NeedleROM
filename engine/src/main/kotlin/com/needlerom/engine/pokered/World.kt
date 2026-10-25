@@ -18,13 +18,98 @@ data class MapInfo(
 class World internal constructor(val game: PokeRed) {
     private val rom get() = game.rom
 
-    val maps: List<MapInfo> by lazy {
-        val seen = HashSet<Int>()
-        (0 until PokeRed.NUM_MAPS).mapNotNull { id ->
-            val h = headerOffset(id) ?: return@mapNotNull null
-            if (!seen.add(h)) return@mapNotNull null
-            MapInfo(id, game.mapName(id), h, Gb.bankOf(h), rom.u8(h), rom.u8(h + 2), rom.u8(h + 1))
+    private var mapsRev = -1
+    private var mapsCache: List<MapInfo> = emptyList()
+
+    /** Every map, including ones created in the editor. */
+    val maps: List<MapInfo> get() {
+        if (mapsRev != rom.revision) {
+            val seen = HashSet<Int>()
+            mapsCache = (0 until PokeRed.NUM_MAPS).mapNotNull { id ->
+                val h = headerOffset(id) ?: return@mapNotNull null
+                if (!seen.add(h) && id !in createdMaps()) return@mapNotNull null
+                MapInfo(id, game.mapName(id), h, Gb.bankOf(h), rom.u8(h), rom.u8(h + 2), rom.u8(h + 1))
+            }
+            mapsRev = rom.revision
         }
+        return mapsCache
+    }
+
+    // ---- New maps -------------------------------------------------------------------------------
+
+    private fun headerPtrOriginal(id: Int): Int {
+        val o = game.sym("MapHeaderPointers") + id * 2
+        return (rom.original[o].toInt() and 0xFF) or ((rom.original[o + 1].toInt() and 0xFF) shl 8)
+    }
+
+    /** Map ids that were unused in the original game and now hold a map made in the editor. */
+    fun createdMaps(): List<Int> = Names.UNUSED_MAPS.filter { id ->
+        rom.u16(game.sym("MapHeaderPointers") + id * 2) != headerPtrOriginal(id) ||
+            rom.u8(game.sym("MapHeaderBanks") + id) != (rom.original[game.sym("MapHeaderBanks") + id].toInt() and 0xFF)
+    }
+
+    /**
+     * Creates a new indoor map using one of the game's unused map ids. It starts filled with
+     * [fillBlock], with one door at the bottom that leads back to where the player came
+     * from. Connect it by pointing a door on another map at it. Returns the new map id.
+     */
+    fun createMap(tileset: Int, width: Int, height: Int, fillBlock: Int): Int {
+        if (width !in 1..30 || height !in 1..30) throw EditException("Maps can be 1 to 30 blocks wide and tall")
+        if ((width + 6) * (height + 6) > 1300) throw EditException("That map is too big for the game's map buffer (try ${30 * 30 / maxOf(width, 1)} blocks or fewer in total)")
+        if (tileset !in 0 until tilesetCount) throw EditException("Unknown tileset")
+        val id = Names.UNUSED_MAPS.firstOrNull { it !in createdMaps() } ?: throw EditException("No unused map slots left")
+        val bank = engineBank
+        rom.batch {
+            ScriptEngine.install(game)
+            val blocks = allocEngine(ByteArray(width * height) { fillBlock.toByte() }, "New map blocks")
+            val texts = allocEngine(byteArrayOf(0, 0), "New map texts")
+            val retByte = homeByte(0xC9) // a "ret" in bank 0: the map has no script of its own
+            val script = allocEngine(ScriptEngine.mapHookBytes(game, retByte), "New map script")
+            // Events: border, one door at the bottom middle (back outside), no signs, no NPCs.
+            val dx = width - 1
+            val dy = height * 2 - 1
+            val disp = game.sym("wOverworldMap") + 7 + width + (width + 6) * (dy shr 1) + (dx shr 1)
+            val events = byteArrayOf(
+                fillBlock.toByte(),
+                1, dy.toByte(), dx.toByte(), 0, 0xFF.toByte(),
+                0,
+                0,
+                disp.toByte(), (disp shr 8).toByte(), dy.toByte(), dx.toByte(),
+            )
+            val ev = allocEngine(events, "New map events")
+            val header = byteArrayOf(
+                tileset.toByte(), height.toByte(), width.toByte(),
+                Gb.ptr(blocks).toByte(), (Gb.ptr(blocks) shr 8).toByte(),
+                Gb.ptr(texts).toByte(), (Gb.ptr(texts) shr 8).toByte(),
+                Gb.ptr(script).toByte(), (Gb.ptr(script) shr 8).toByte(),
+                0,
+                Gb.ptr(ev).toByte(), (Gb.ptr(ev) shr 8).toByte(),
+            )
+            val h = allocEngine(header, "New map")
+            rom.write16(game.sym("MapHeaderPointers") + id * 2, Gb.ptr(h), "New map")
+            rom.write8(game.sym("MapHeaderBanks") + id, bank, "New map")
+            // Music: borrow it from an existing map with the same tileset.
+            val like = maps.firstOrNull { it.tileset == tileset && it.id !in Names.UNUSED_MAPS } ?: maps.first()
+            val song = game.sym("MapSongBanks")
+            rom.write(song + id * 2, rom.slice(song + like.id * 2, 2), "New map music")
+        }
+        return id
+    }
+
+    /** The block used most on existing maps with this tileset (a sensible floor for new maps). */
+    fun commonBlock(tileset: Int): Int {
+        val counts = IntArray(256)
+        maps.filter { it.tileset == tileset && it.id !in createdMaps() }.forEach { m ->
+            val gm = map(m.id)
+            for (y in 0 until gm.height) for (x in 0 until gm.width) counts[gm.block(x, y)]++
+        }
+        return counts.indices.maxByOrNull { counts[it] } ?: 0
+    }
+
+    /** Sets the music of a map to that of another map. */
+    fun copyMusic(to: Int, from: Int) {
+        val song = game.sym("MapSongBanks")
+        rom.write(song + to * 2, rom.slice(song + from * 2, 2), "Music of ${game.mapName(to)}")
     }
 
     fun mapInfo(id: Int): MapInfo? = maps.firstOrNull { it.id == id }
