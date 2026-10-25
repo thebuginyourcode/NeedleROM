@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Game Boy screen with a block grid and a needle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#E0F8D0" android:pathData="M32,34h44v40h-44z" />
+    <path android:fillColor="#88C070" android:pathData="M32,34h22v20h-22zM54,54h22v20h-22z" />
+    <path android:fillColor="#346856" android:pathData="M42,44h6v6h-6zM62,62h6v6h-6z" />
+    <path android:fillColor="#FF6B8B" android:pathData="M80,22l4,4l-26,26l-6,2l2,-6z" />
+</vector>

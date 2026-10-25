@@ -32,6 +32,11 @@ class Rom(original: ByteArray) {
     fun inBounds(o: Int, len: Int = 1) = o >= 0 && len >= 0 && o.toLong() + len <= data.size
     fun slice(o: Int, len: Int): ByteArray = data.copyOfRange(o, (o + len).coerceAtMost(data.size))
 
+    /** Starts an undo step that spans several calls (e.g. a paint stroke); close with [endGroup]. */
+    fun beginGroup() { if (openDepth++ == 0) openGroup = ++groupCounter }
+
+    fun endGroup() { if (openDepth > 0 && --openDepth == 0) openGroup = null }
+
     /** Runs [block] as a single undo step. */
     fun <T> batch(block: () -> T): T {
         if (openDepth++ == 0) openGroup = ++groupCounter
