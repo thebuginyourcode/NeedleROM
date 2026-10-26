@@ -67,7 +67,11 @@ fun HomeScreen(state: AppState, files: Files) {
                         Button(onClick = files.openRom, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Filled.Add, null); Text("  New project from a ROM")
                         }
-                        Hint("Use a ROM of a game you own. Everything stays on this device.")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.material3.OutlinedButton(onClick = files.restore, modifier = Modifier.weight(1f)) { Text("Restore backup") }
+                            androidx.compose.material3.OutlinedButton(onClick = files.romPlusPatch, modifier = Modifier.weight(1f)) { Text("ROM + patch") }
+                        }
+                        Hint("Use a ROM of a game you own. Everything stays on this device. \"ROM + patch\" turns an exported .bps/.ips patch back into a project: pick your original ROM, then the patch.")
                     }
                 }
             }
@@ -98,7 +102,7 @@ fun HomeScreen(state: AppState, files: Files) {
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete ${p.name}?") },
-            text = { Text("This removes the project and its saves from this device. Export it first if you want to keep it.") },
+            text = { Text("This removes the project and its saves from this device. Back it up first (open it, ☰ → Back up project) if you want to keep it.") },
             confirmButton = { TextButton(onClick = { state.deleteProject(p); deleting = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )

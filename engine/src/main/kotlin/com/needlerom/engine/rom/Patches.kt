@@ -127,7 +127,8 @@ object Bps {
         fun u32(at: Int): Long = (0 until 4).fold(0L) { acc, s -> acc or ((patch[at + s].toLong() and 0xFF) shl (8 * s)) }
         vlq()
         val targetSize = vlq().toInt()
-        p += vlq().toInt()
+        val metadataLength = vlq().toInt() // read before adding: vlq() moves p
+        p += metadataLength
         val warn = if (u32(end) != crc(source)) "This patch was made for a different ROM" else null
         if (u32(end + 8) != crc(patch, end + 8)) throw PatchException("BPS patch is corrupt")
         val out = ByteArray(targetSize)

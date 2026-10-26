@@ -158,6 +158,36 @@ class AppState(app: Application) : AndroidViewModel(app) {
         route = Route.Studio
     }
 
+    /** Saves the open project as one backup file. */
+    fun backupProject(uri: Uri) = work("Backup failed") {
+        val p = project ?: return@work
+        saveNow()
+        resolver.openOutputStream(uri, "wt")?.use { p.backup(it) } ?: error("Couldn't write the file")
+        withContext(Dispatchers.Main) { message = "Backup saved" }
+    }
+
+    fun restoreProject(uri: Uri) = work("Couldn't restore that backup") {
+        val p = resolver.openInputStream(uri)?.use { Project.restore(root, it) } ?: error("Couldn't read the file")
+        withContext(Dispatchers.Main) { refreshProjects(); message = "Restored ${p.name}" }
+    }
+
+    /** The original ROM picked for "ROM + patch", waiting for the patch. */
+    private var pendingOriginal: ByteArray? = null
+
+    fun pickedOriginalForPatch(uri: Uri) = work("Couldn't read that ROM") {
+        pendingOriginal = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Couldn't read the file")
+        withContext(Dispatchers.Main) { message = "Now pick the .bps or .ips patch" }
+    }
+
+    fun importPatch(uri: Uri) = work("Couldn't apply that patch") {
+        val original = pendingOriginal ?: error("Pick the original ROM first")
+        val patch = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Couldn't read the file")
+        val name = displayName(uri).substringBeforeLast('.').ifBlank { "Patched hack" }
+        val p = Project.fromPatch(root, name, original, patch)
+        pendingOriginal = null
+        withContext(Dispatchers.Main) { refreshProjects(); message = "Created ${p.name} from the patch" }
+    }
+
     fun deleteProject(p: Project) {
         p.delete(); refreshProjects()
     }

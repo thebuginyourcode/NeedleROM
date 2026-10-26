@@ -193,6 +193,7 @@ private fun Toolbar(state: AppState, files: Files, labels: Boolean, onRename: ()
                 HorizontalDivider()
                 ExportKind.entries.forEach { k -> DropdownMenuItem(text = { Text("Export ${k.label}…") }, onClick = { menu = false; files.export(k) }) }
                 HorizontalDivider()
+                DropdownMenuItem(text = { Text("Back up project…") }, onClick = { menu = false; files.backup() })
                 DropdownMenuItem(text = { Text("Rename project") }, onClick = { menu = false; onRename() })
                 DropdownMenuItem(text = { Text("Close project") }, onClick = { menu = false; state.go(Route.Home) })
             }

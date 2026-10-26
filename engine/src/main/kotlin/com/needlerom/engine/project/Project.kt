@@ -86,6 +86,18 @@ class Project private constructor(val dir: File) {
 
     fun delete() = dir.deleteRecursively()
 
+    /** Writes the whole project (ROMs, names, saves) as one zip file. */
+    fun backup(out: java.io.OutputStream) {
+        saveMeta()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            dir.listFiles()!!.filter { it.isFile && !it.name.endsWith(".tmp") }.sortedBy { it.name }.forEach { f ->
+                zip.putNextEntry(java.util.zip.ZipEntry(f.name))
+                f.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+        }
+    }
+
     companion object {
         /** Creates a project from a ROM the user owns. Throws if it isn't a supported game. */
         fun create(root: File, name: String, romBytes: ByteArray): Project {
@@ -104,6 +116,35 @@ class Project private constructor(val dir: File) {
         }
 
         fun open(dir: File): Project = Project(dir)
+
+        /** Recreates a project from a [backup] zip. */
+        fun restore(root: File, input: java.io.InputStream): Project {
+            val files = HashMap<String, ByteArray>()
+            java.util.zip.ZipInputStream(input).use { zip ->
+                while (true) {
+                    val e = zip.nextEntry ?: break
+                    val name = File(e.name).name // no paths: only the project's own files
+                    if (!e.isDirectory && name.isNotEmpty()) files[name] = zip.readBytes()
+                }
+            }
+            val base = files["base.rom"] ?: throw IllegalArgumentException("That isn't a NeedleROM project backup")
+            val props = Properties().apply { files["project.properties"]?.let { load(it.inputStream()) } }
+            val p = create(root, props.getProperty("name", "Restored hack"), base)
+            files.filterKeys { it != "base.rom" }.forEach { (name, bytes) -> File(p.dir, name).writeBytes(bytes) }
+            return Project(p.dir)
+        }
+
+        /** A project whose hack is the original ROM with a BPS or IPS [patch] applied. */
+        fun fromPatch(root: File, name: String, original: ByteArray, patch: ByteArray): Project {
+            val hacked = when {
+                patch.size >= 4 && String(patch, 0, 4, Charsets.US_ASCII) == "BPS1" -> com.needlerom.engine.rom.Bps.apply(original, patch).first
+                patch.size >= 5 && String(patch, 0, 5, Charsets.US_ASCII) == "PATCH" -> com.needlerom.engine.rom.Ips.apply(original, patch)
+                else -> throw IllegalArgumentException("That isn't a BPS or IPS patch")
+            }
+            val p = create(root, name, original)
+            writeAtomically(File(p.dir, "work.rom"), hacked)
+            return p
+        }
 
         fun list(root: File): List<Project> =
             (root.listFiles() ?: emptyArray()).filter { File(it, "base.rom").exists() }.map(::Project).sortedByDescending { it.modified }

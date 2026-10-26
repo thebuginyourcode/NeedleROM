@@ -23,7 +23,14 @@ import com.needlerom.app.ExportKind
 import com.needlerom.app.Route
 
 /** File pickers, created once at the root so any screen can use them. */
-class Files(val openRom: () -> Unit, val export: (ExportKind) -> Unit)
+class Files(
+    val openRom: () -> Unit,
+    val export: (ExportKind) -> Unit,
+    val backup: () -> Unit = {},
+    val restore: () -> Unit = {},
+    /** Picks the original ROM, then the patch to apply to it. */
+    val romPlusPatch: () -> Unit = {},
+)
 
 @Composable
 fun Root(state: AppState, onExit: () -> Unit) {
@@ -31,9 +38,18 @@ fun Root(state: AppState, onExit: () -> Unit) {
     val saveRom = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri -> uri?.let { state.export(it, ExportKind.ROM) } }
     val saveIps = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri -> uri?.let { state.export(it, ExportKind.IPS) } }
     val saveBps = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri -> uri?.let { state.export(it, ExportKind.BPS) } }
+    val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> uri?.let(state::backupProject) }
+    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(state::restoreProject) }
+    val openPatch = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(state::importPatch) }
+    val openOriginal = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) { state.pickedOriginalForPatch(uri); openPatch.launch(arrayOf("*/*")) }
+    }
     val files = remember(state) {
         Files(
             openRom = { openRom.launch(arrayOf("*/*")) },
+            backup = { saveBackup.launch((state.project?.name ?: "hack").replace(' ', '_') + ".needlerom.zip") },
+            restore = { openBackup.launch(arrayOf("*/*")) },
+            romPlusPatch = { openOriginal.launch(arrayOf("*/*")) },
             export = { k ->
                 val name = state.suggestedName(k)
                 when (k) { ExportKind.ROM -> saveRom.launch(name); ExportKind.IPS -> saveIps.launch(name); ExportKind.BPS -> saveBps.launch(name) }

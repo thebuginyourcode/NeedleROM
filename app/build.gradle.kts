@@ -12,16 +12,30 @@ android {
         applicationId = "com.needlerom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0.0"
+        // Every CI build gets a higher version, so each new APK installs as an update.
+        versionCode = 100 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
+        versionName = "2.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "dev"}"
+    }
+
+    // One fixed key for every build (it's not a secret): Android only installs an update over
+    // the app, keeping its projects, when the signature matches the installed one.
+    signingConfigs {
+        create("needlerom") {
+            storeFile = file("needlerom.keystore")
+            storePassword = "needlerom"
+            keyAlias = "needlerom"
+            keyPassword = "needlerom"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("needlerom")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so the APK installs directly; use your own keystore to publish.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("needlerom")
         }
     }
 
