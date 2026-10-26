@@ -7,6 +7,8 @@ local.properties
 captures/
 .kotlin/
 *.keystore
+# The shared app signing key is meant to be in the repo (it keeps updates installable).
+!app/needlerom.keystore
 # Never commit game ROMs or saves
 *.gb
 *.gbc
