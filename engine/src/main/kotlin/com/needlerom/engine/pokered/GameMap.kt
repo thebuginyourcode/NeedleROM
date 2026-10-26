@@ -440,6 +440,43 @@ class GameMap internal constructor(val world: World, val info: MapInfo) {
 
     private val scriptPtrField = h + 7
 
+    /** One entry of the map's text table, with who shows it and its editable lines. */
+    data class MapText(val textId: Int, val usedBy: String, val lines: List<GameLine>, val isScript: Boolean)
+
+    /**
+     * Every text on the map, including ones no NPC or sign uses (the map's own cutscenes
+     * show those by number).
+     */
+    fun allTexts(): List<MapText> = (1..textTableSize).mapNotNull { id ->
+        val at = textAddress(id) ?: return@mapNotNull null
+        val users = npcs.filter { it.textId == id }.map { "NPC #${it.index + 1}" } +
+            signs.filter { it.textId == id }.map { "Sign #${it.index + 1}" } +
+            triggers.filter { it.textId == id }.map { "Trigger" }
+        val isScript = rom.u8(at) == 0x08
+        val lines = if (isScript) GameScripts.outline(g, this, id)?.lines.orEmpty() else GameScripts.textLines(g, at)
+        if (lines.isEmpty()) return@mapNotNull null
+        MapText(id, users.joinToString().ifEmpty { "The map's own scenes" }, lines, isScript)
+    }
+
+    /**
+     * Texts the map's own code gives to trainer battles (`ld hl, won / ld de, lost /
+     * call SaveEndBattleTextPointers`), as (said when the player wins, said when they lose).
+     */
+    fun battleEndTexts(): List<Pair<List<GameLine>, List<GameLine>>> {
+        val save = g.sym("SaveEndBattleTextPointers")
+        val o = rom.original
+        fun ptr(at: Int) = (o[at].toInt() and 0xFF) or ((o[at + 1].toInt() and 0xFF) shl 8)
+        // The map's own code sits between its script and its text table.
+        val start = Gb.offset(bank, ptr(scriptPtrField))
+        val end = Gb.offset(bank, ptr(textPtrField))
+        if (end <= start || end - start > 0x3000) return emptyList()
+        return (start until end - 8).filter { i ->
+            rom.u8(i) == 0x21 && rom.u8(i + 3) == 0x11 && rom.u8(i + 6) == 0xCD && rom.u16(i + 7) == save
+        }.map { i ->
+            GameScripts.textLines(g, Gb.offset(bank, rom.u16(i + 1))) to GameScripts.textLines(g, Gb.offset(bank, rom.u16(i + 4)))
+        }.filter { it.first.isNotEmpty() || it.second.isNotEmpty() }.distinct()
+    }
+
     /** Puts the NeedleScript hook in front of this map's own per-frame script. */
     private fun installMapHook() {
         val cur = Gb.offset(bank, rom.u16(scriptPtrField))

@@ -35,6 +35,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -285,6 +286,7 @@ private fun MapProperties(state: AppState, map: GameMap, st: EditorState, gfx: G
                 }
             }
         }
+        MapTextsSection(state, map)
         PropSection("View & test") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(st.showGrid, { st.showGrid = !st.showGrid }, label = { Text("Grid") })
@@ -298,6 +300,49 @@ private fun MapProperties(state: AppState, map: GameMap, st: EditorState, gfx: G
             TestPokemon(state)
         }
         Hint("Tip: pick the Objects tool and tap something on the map to edit it.", Modifier.padding(12.dp))
+    }
+}
+
+/** Every text on the map, including the ones only its cutscenes show, and its battle-end lines. */
+@Composable
+private fun MapTextsSection(state: AppState, map: GameMap) {
+    var editing by remember { mutableStateOf<com.needlerom.engine.pokered.GameLine?>(null) }
+    PropSection("Texts on this map", initiallyOpen = false) {
+        val texts = remember(map) { map.allTexts() }
+        val battles = remember(map) { map.battleEndTexts() }
+        Hint("Every line on this map, including ones only the map's own cutscenes show. Tap a line to edit it.")
+        texts.forEach { t ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Text #${t.textId} · ${t.usedBy}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                if (t.isScript) TextButton(onClick = {
+                    state.go(com.needlerom.app.Route.GameScript(map.id, t.textId, "${state.mapName(map.id)} · text #${t.textId}"))
+                }) { Text("Script") }
+            }
+            t.lines.forEach { line -> EditableLine(line) { editing = it } }
+        }
+        if (battles.isNotEmpty()) {
+            Text("Battle endings", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            battles.forEach { (won, lost) ->
+                Hint("When the player wins:")
+                won.forEach { line -> EditableLine(line) { editing = it } }
+                Hint("When the player loses:")
+                lost.forEach { line -> EditableLine(line) { editing = it } }
+            }
+        }
+        if (texts.isEmpty() && battles.isEmpty()) Hint("No texts.")
+    }
+    editing?.let { line ->
+        TextDialog("Edit line", line.text, onDismiss = { editing = null }) { text ->
+            if (state.edit("Line saved") { com.needlerom.engine.pokered.GameText.write(it, line, text) }) editing = null
+        }
+    }
+}
+
+@Composable
+private fun EditableLine(line: com.needlerom.engine.pokered.GameLine, onEdit: (com.needlerom.engine.pokered.GameLine) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onEdit(line) }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("“${line.text.replace('\n', ' ')}”", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        Icon(androidx.compose.material.icons.Icons.Filled.Edit, "Edit line", Modifier.padding(start = 6.dp).size(16.dp))
     }
 }
 

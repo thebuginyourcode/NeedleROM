@@ -89,3 +89,24 @@ class GameScriptsTest {
         assertTrue(gb.read(TestRoms.sym("pokered.sym", "wEventFlags") + e / 8) and (1 shl (e % 8)) != 0, "story flag set")
     }
 }
+
+class MapTextsTest {
+    @Test
+    fun findsTheRivalsLabLines() {
+        val bytes = TestRoms.bytes("pokered.gbc") ?: return
+        val g = PokeRed(Rom(bytes))
+        val lab = g.world.map(0x28)
+        val texts = lab.allTexts()
+        texts.forEach { t -> println("#${t.textId} [${t.usedBy}] " + t.lines.joinToString(" / ") { it.text.replace("\n", " ").take(40) }) }
+        val all = texts.flatMap { it.lines }.map { it.text.replace("\n", " ") }
+        assertTrue(all.any { "later" in it.lowercase() }, "the rival's goodbye: $all")
+        assertTrue(texts.any { it.usedBy == "The map's own scenes" }, "cutscene-only texts are listed")
+        val battle = lab.battleEndTexts()
+        println("battle: " + battle.map { (w, l) -> w.map { it.text.replace("\n", " ") } to l.map { it.text.replace("\n", " ") } })
+        assertTrue(battle.any { (won, _) -> won.any { "WHAT" in it.text } }, "the rival's losing line")
+        // Edit the battle line and read it back.
+        val line = battle.first { (won, _) -> won.any { "WHAT" in it.text } }.first.first()
+        GameText.write(g, line, "No way! You beat\nme fair and square!")
+        assertTrue(g.world.map(0x28).battleEndTexts().any { (won, _) -> won.any { it.text.startsWith("No way!") } })
+    }
+}
